@@ -9,10 +9,11 @@ final class ConfigResolver
     public static function eventsFileWithOrigin(): array
     {
         $origin = 'default';
-        $env = Env::get('CACHEER_MONITOR_EVENTS');
-        if ($env) {
+        // Use OS environment only for 'env' origin, not .env fallback
+        $envValue = getenv('CACHEER_MONITOR_EVENTS');
+        if ($envValue !== false && $envValue !== null && $envValue !== '') {
             $origin = 'env';
-            return [Path::resolve((string) $env), $origin];
+            return [Path::resolve((string) $envValue), $origin];
         }
         // .env value
         $dotenvPath = self::fromDotEnv('CACHEER_MONITOR_EVENTS');
@@ -43,4 +44,3 @@ final class ConfigResolver
         return null;
     }
 }
-
