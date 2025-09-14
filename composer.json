@@ -1,6 +1,6 @@
 {
   "name": "cacheerphp/monitor",
-  "description": "Dashboard and telemetry reporter for CacheerPHP (separate package).",
+  "description": "Dashboard and telemetry reporter for CacheerPHP.",
   "type": "library",
   "license": "MIT",
   "require": {
@@ -16,4 +16,3 @@
     "bin/cacheer-monitor"
   ]
 }
-
