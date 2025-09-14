@@ -1,72 +1,315 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="h-full">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Cacheer Monitor</title>
-    <style>
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; color: #1e293b; }
-      h1 { margin: 0 0 16px; font-size: 20px; }
-      .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-      .card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; background: #fff; }
-      .label { font-size: 12px; color: #475569; }
-      .value { font-size: 22px; font-weight: 600; }
-      .list { margin-top: 16px; }
-      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; }
-      footer { margin-top: 32px; font-size: 12px; color: #64748b; }
-    </style>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-Sl1G5mC8p4I5Jtf6cW41gO1oLqkQ7mJ3VJzpsQ1Q99Q8QQ5l4y1oSg3g3m7pR2vY0Dk3+f1b3nKXg0f5qkqzYw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
-  <body>
-    <h1>Cacheer Monitor</h1>
-    <div class="grid">
-      <div class="card"><div class="label">Hits</div><div id="hits" class="value">0</div></div>
-      <div class="card"><div class="label">Misses</div><div id="misses" class="value">0</div></div>
-      <div class="card"><div class="label">Hit Rate</div><div id="hit_rate" class="value">0%</div></div>
-      <div class="card"><div class="label">Puts</div><div id="puts" class="value">0</div></div>
-      <div class="card"><div class="label">Flushes</div><div id="flushes" class="value">0</div></div>
-      <div class="card"><div class="label">Renews</div><div id="renews" class="value">0</div></div>
-      <div class="card"><div class="label">Clears</div><div id="clears" class="value">0</div></div>
-      <div class="card"><div class="label">Errors</div><div id="errors" class="value">0</div></div>
+  <body class="h-full bg-slate-50 text-slate-800 dark:bg-slate-900 dark:text-slate-100">
+    <div class="min-h-full">
+      <!-- Top Bar -->
+      <header class="sticky top-0 z-10 bg-white/80 dark:bg-slate-800/80 backdrop-blur border-b border-slate-200 dark:border-slate-700">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <i class="fa-solid fa-gauge-high text-blue-600 dark:text-blue-400 text-xl"></i>
+            <h1 class="font-semibold text-lg">Cacheer Monitor</h1>
+            <span id="statusDot" class="ml-2 inline-flex items-center gap-2 text-xs text-slate-500">
+              <span class="w-2.5 h-2.5 rounded-full bg-slate-300" id="statusIndicator"></span>
+              <span id="lastUpdated">—</span>
+            </span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="toggleTheme" class="px-3 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs">
+              <i class="fa-solid fa-moon"></i>
+            </button>
+            <select id="refreshRate" class="px-2 py-1.5 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+              <option value="1000">1s</option>
+              <option value="2000" selected>2s</option>
+              <option value="5000">5s</option>
+              <option value="10000">10s</option>
+            </select>
+            <button id="btnRefresh" class="px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs">
+              <i class="fa-solid fa-rotate"></i> Refresh
+            </button>
+          </div>
+        </div>
+      </header>
+      <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+        <!-- Config bar -->
+        <div class="flex flex-col md:flex-row md:items-center gap-2 text-xs">
+          <div class="flex items-center gap-2">
+            <span class="text-slate-500"><i class="fa-regular fa-file-lines mr-1"></i>Events file:</span>
+            <span id="eventsFile" class="font-mono truncate max-w-[60ch]">—</span>
+            <button id="copyPath" class="px-2 py-1 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"><i class="fa-regular fa-copy"></i></button>
+            <span id="origin" class="ml-1 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">origin: —</span>
+          </div>
+          <div class="grow"></div>
+          <div>
+            <span id="since" class="text-slate-500"><i class="fa-regular fa-clock mr-1"></i>since: —</span>
+          </div>
+        </div>
+        <!-- Stats Grid -->
+        <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <div class="text-xs text-slate-500 flex items-center gap-2"><i class="fa-solid fa-circle-check text-emerald-500"></i> Hits</div>
+            <div id="hits" class="text-2xl font-semibold mt-1">0</div>
+          </div>
+          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <div class="text-xs text-slate-500 flex items-center gap-2"><i class="fa-solid fa-circle-xmark text-rose-500"></i> Misses</div>
+            <div id="misses" class="text-2xl font-semibold mt-1">0</div>
+          </div>
+          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <div class="text-xs text-slate-500 flex items-center gap-2"><i class="fa-solid fa-bullseye text-indigo-500"></i> Hit Rate</div>
+            <div id="hit_rate" class="text-2xl font-semibold mt-1">0%</div>
+          </div>
+          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <div class="text-xs text-slate-500 flex items-center gap-2"><i class="fa-solid fa-box-archive text-amber-600"></i> Puts</div>
+            <div id="puts" class="text-2xl font-semibold mt-1">0</div>
+          </div>
+          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <div class="text-xs text-slate-500 flex items-center gap-2"><i class="fa-solid fa-broom text-sky-600"></i> Flushes</div>
+            <div id="flushes" class="text-2xl font-semibold mt-1">0</div>
+          </div>
+          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <div class="text-xs text-slate-500 flex items-center gap-2"><i class="fa-solid fa-arrows-rotate text-teal-600"></i> Renews</div>
+            <div id="renews" class="text-2xl font-semibold mt-1">0</div>
+          </div>
+          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <div class="text-xs text-slate-500 flex items-center gap-2"><i class="fa-solid fa-trash-can text-fuchsia-600"></i> Clears</div>
+            <div id="clears" class="text-2xl font-semibold mt-1">0</div>
+          </div>
+          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <div class="text-xs text-slate-500 flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation text-rose-600"></i> Errors</div>
+            <div id="errors" class="text-2xl font-semibold mt-1">0</div>
+          </div>
+        </section>
+        <!-- Two Columns: Drivers + Top Keys -->
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="font-semibold text-sm"><i class="fa-solid fa-server text-slate-500 mr-2"></i>Drivers</h3>
+              <span class="text-xs text-slate-500" id="totalEvents">events: 0</span>
+            </div>
+            <canvas id="driversChart" height="170" class="mb-3"></canvas>
+            <div id="driversList" class="space-y-2"></div>
+          </div>
+          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="font-semibold text-sm"><i class="fa-solid fa-key text-slate-500 mr-2"></i>Top Keys</h3>
+              <div class="flex items-center gap-2">
+                <input id="filterKey" placeholder="filter key..." class="px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"/>
+                <button id="clearFilter" class="px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700">clear</button>
+              </div>
+            </div>
+            <table class="w-full text-sm">
+              <thead class="text-xs text-slate-500">
+                <tr><th class="text-left py-1">Key</th><th class="text-right py-1">Count</th></tr>
+              </thead>
+              <tbody id="topKeysBody"></tbody>
+            </table>
+          </div>
+        </section>
+        <!-- Events Stream -->
+        <section class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="font-semibold text-sm"><i class="fa-regular fa-list-alt text-slate-500 mr-2"></i>Recent Events</h3>
+            <div class="flex items-center gap-2 text-xs">
+              <select id="eventLimit" class="px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                <option>50</option>
+                <option selected>200</option>
+                <option>500</option>
+              </select>
+              <select id="typeFilter" class="px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                <option value="">all types</option>
+                <option>hit</option>
+                <option>miss</option>
+                <option>put</option>
+                <option>flush</option>
+                <option>renew</option>
+                <option>clear</option>
+                <option>tag</option>
+                <option>error</option>
+              </select>
+            </div>
+          </div>
+          <div id="events" class="space-y-1 max-h-[420px] overflow-auto pr-1"></div>
+        </section>
+      </main>
     </div>
-    <div class="list">
-      <h3>Drivers</h3>
-      <pre id="drivers" class="mono">{}</pre>
-    </div>
-    <div class="list">
-      <h3>Top Keys</h3>
-      <pre id="top_keys" class="mono">{}</pre>
-    </div>
-    <footer>
-      <div id="since" class="mono"></div>
-    </footer>
-
     <script>
+      const $ = (sel) => document.querySelector(sel);
+      const fmtPct = (v) => (v*100).toFixed(1) + '%';
+      let timer = null;
+      let chart = null;
+      function setStatus(ok) {
+        const dot = $('#statusIndicator');
+        dot.className = 'w-2.5 h-2.5 rounded-full ' + (ok ? 'bg-emerald-500' : 'bg-rose-500');
+        $('#lastUpdated').textContent = new Date().toLocaleTimeString();
+      }
+      async function loadConfig() {
+        try {
+          const r = await fetch('/api/config', {cache: 'no-store'});
+          if (!r.ok) return;
+          const cfg = await r.json();
+          $('#eventsFile').textContent = cfg.events_file || '—';
+          $('#origin').textContent = 'origin: ' + (cfg.origin || 'default');
+        } catch {}
+      }
+      function renderDrivers(metrics) {
+        const drivers = metrics.drivers || {};
+        const total = Object.values(drivers).reduce((a,b)=>a+b,0);
+        $('#totalEvents').textContent = 'events: ' + (metrics.total_events || total);
+        // Chart
+        try {
+          const ctx = document.getElementById('driversChart').getContext('2d');
+          const labels = Object.keys(drivers);
+          const data = Object.values(drivers);
+          const palette = ['#0ea5e9','#22c55e','#f59e0b','#ef4444','#8b5cf6','#14b8a6','#94a3b8'];
+          if (chart) chart.destroy();
+          chart = new Chart(ctx, {
+            type: 'doughnut',
+            data: { labels, datasets: [{ data, backgroundColor: labels.map((_,i)=>palette[i%palette.length]) }] },
+            options: { plugins: { legend: { display: false }}, cutout: '60%' }
+          });
+        } catch {}
+        // List
+        const list = $('#driversList');
+        list.innerHTML = '';
+        const entries = Object.entries(drivers);
+        if (entries.length === 0) {
+          list.innerHTML = '<div class="text-xs text-slate-500">No driver data.</div>'; return;
+        }
+        entries.forEach(([name,count], idx)=>{
+          const pct = total ? Math.round((count/total)*100) : 0;
+          const row = document.createElement('div');
+          row.className = 'text-xs';
+          row.innerHTML = `
+            <div class="flex items-center justify-between">
+              <span class="font-medium">${name}</span>
+              <span class="text-slate-500">${count} · ${pct}%</span>
+            </div>
+            <div class="w-full h-2 bg-slate-100 dark:bg-slate-700 rounded mt-1">
+              <div class="h-2 rounded" style="width:${pct}%; background:${['#0ea5e9','#22c55e','#f59e0b','#ef4444','#8b5cf6','#14b8a6','#94a3b8'][idx%7]}"></div>
+            </div>`;
+          list.appendChild(row);
+        });
+      }
+      function renderTopKeys(metrics) {
+        const filter = ($('#filterKey').value || '').toLowerCase();
+        const body = $('#topKeysBody');
+        body.innerHTML = '';
+        const entries = Object.entries(metrics.top_keys || {});
+        entries
+          .filter(([k]) => !filter || k.toLowerCase().includes(filter))
+          .forEach(([k,c]) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td class="py-1 pr-2 truncate max-w-[40ch]"><span class="font-mono">${k}</span></td><td class="py-1 text-right">${c}</td>`;
+            body.appendChild(tr);
+          });
+      }
+      function badge(type){
+        const base = 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium';
+        switch(type){
+          case 'hit': return `${base} bg-emerald-100 text-emerald-700`; 
+          case 'miss': return `${base} bg-rose-100 text-rose-700`;
+          case 'put': case 'put_forever': return `${base} bg-amber-100 text-amber-700`;
+          case 'flush': return `${base} bg-sky-100 text-sky-700`;
+          case 'renew': return `${base} bg-teal-100 text-teal-700`;
+          case 'clear': return `${base} bg-fuchsia-100 text-fuchsia-700`;
+          case 'tag': case 'flush_tag': return `${base} bg-indigo-100 text-indigo-700`;
+          case 'error': return `${base} bg-rose-200 text-rose-800`;
+          default: return `${base} bg-slate-100 text-slate-700`;
+        }
+      }
       async function loadMetrics() {
         try {
           const res = await fetch('/api/metrics', { cache: 'no-store' });
-          if (!res.ok) return;
+          if (!res.ok) { setStatus(false); return; }
           const data = await res.json();
-          document.getElementById('hits').textContent = data.hits || 0;
-          document.getElementById('misses').textContent = data.misses || 0;
-          document.getElementById('puts').textContent = data.puts || 0;
-          document.getElementById('flushes').textContent = data.flushes || 0;
-          document.getElementById('renews').textContent = data.renews || 0;
-          document.getElementById('clears').textContent = data.clears || 0;
-          document.getElementById('errors').textContent = data.errors || 0;
-          document.getElementById('hit_rate').textContent = ((data.hit_rate || 0) * 100).toFixed(1) + '%';
-          document.getElementById('drivers').textContent = JSON.stringify(data.drivers || {}, null, 2);
-          document.getElementById('top_keys').textContent = JSON.stringify(data.top_keys || {}, null, 2);
+          $('#hits').textContent = data.hits || 0;
+          $('#misses').textContent = data.misses || 0;
+          $('#puts').textContent = data.puts || 0;
+          $('#flushes').textContent = data.flushes || 0;
+          $('#renews').textContent = data.renews || 0;
+          $('#clears').textContent = data.clears || 0;
+          $('#errors').textContent = data.errors || 0;
+          $('#hit_rate').textContent = fmtPct(data.hit_rate || 0);
           if (data.since) {
             const d = new Date(data.since * 1000);
-            document.getElementById('since').textContent = 'Collecting since: ' + d.toLocaleString();
+            $('#since').textContent = `since: ${d.toLocaleString()}`;
           }
-        } catch (e) {
-          // ignore
-        }
+          renderDrivers(data);
+          renderTopKeys(data);
+          setStatus(true);
+        } catch (e) { setStatus(false); }
       }
-      loadMetrics();
-      setInterval(loadMetrics, 2000);
+      async function loadEvents() {
+        try {
+          const limit = parseInt($('#eventLimit').value || '200', 10);
+          const res = await fetch(`/api/events?limit=${limit}`, { cache: 'no-store' });
+          if (!res.ok) return;
+          let events = await res.json();
+          const type = $('#typeFilter').value || '';
+          const filterKey = ($('#filterKey').value || '').toLowerCase();
+          if (type) events = events.filter(e => e.type === type);
+          if (filterKey) events = events.filter(e => (e.payload?.key || '').toLowerCase().includes(filterKey));
+          const container = $('#events');
+          container.innerHTML = '';
+          events.slice().reverse().forEach(e => {
+            const row = document.createElement('div');
+            row.className = 'text-xs border-b border-slate-100 dark:border-slate-800 py-1';
+            const t = new Date((e.ts||0)*1000).toLocaleTimeString();
+            const key = e.payload?.key ? `<span class="font-mono">${e.payload.key}</span>` : '';
+            const ns = e.payload?.namespace ? `<span class="ml-1 text-slate-500">[${e.payload.namespace}]</span>` : '';
+            const drv = e.payload?.driver || 'unknown';
+            const dur = (e.payload?.duration_ms||0).toFixed ? e.payload.duration_ms.toFixed(1) : e.payload?.duration_ms;
+            row.innerHTML = `
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="${badge(e.type)}">${e.type}</span>
+                  <span>${key}${ns}</span>
+                </div>
+                <div class="text-slate-500">${t}</div>
+              </div>
+              <div class="flex items-center gap-3 text-slate-500 mt-0.5">
+                <span><i class="fa-solid fa-server mr-1"></i>${drv}</span>
+                ${dur ? `<span><i class=\"fa-regular fa-clock mr-1\"></i>${dur} ms</span>` : ''}
+                ${e.payload?.ttl ? `<span><i class=\"fa-regular fa-hourglass-half mr-1\"></i>ttl: ${e.payload.ttl}</span>` : ''}
+                ${e.payload?.size_bytes ? `<span><i class=\"fa-regular fa-file-lines mr-1\"></i>${e.payload.size_bytes} bytes</span>` : ''}
+              </div>`;
+            container.appendChild(row);
+          });
+        } catch {}
+      }
+      function start(){
+        loadConfig();
+        loadMetrics();
+        loadEvents();
+        const rateSel = $('#refreshRate');
+        const restart = () => { if (timer) clearInterval(timer); timer = setInterval(()=>{ loadMetrics(); loadEvents(); }, parseInt(rateSel.value,10)); };
+        restart();
+        rateSel.addEventListener('change', restart);
+        $('#btnRefresh').addEventListener('click', ()=>{ loadMetrics(); loadEvents(); });
+        $('#filterKey').addEventListener('input', ()=>{ loadMetrics(); loadEvents(); });
+        $('#clearFilter').addEventListener('click', ()=>{ $('#filterKey').value=''; loadMetrics(); loadEvents(); });
+        $('#typeFilter').addEventListener('change', loadEvents);
+        $('#eventLimit').addEventListener('change', loadEvents);
+        $('#copyPath').addEventListener('click', async ()=>{
+          try { await navigator.clipboard.writeText($('#eventsFile').textContent||''); } catch {}
+        });
+        // Theme toggle
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const saved = localStorage.getItem('cacheer-theme');
+        if ((saved === 'dark') || (!saved && prefersDark)) document.documentElement.classList.add('dark');
+        $('#toggleTheme').addEventListener('click', ()=>{
+          document.documentElement.classList.toggle('dark');
+          localStorage.setItem('cacheer-theme', document.documentElement.classList.contains('dark') ? 'dark':'light');
+        });
+      }
+      start();
     </script>
   </body>
   </html>
-
