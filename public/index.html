@@ -34,6 +34,9 @@
             <button id="btnRefresh" class="px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs">
               <i class="fa-solid fa-rotate"></i> Refresh
             </button>
+            <button id="btnClear" class="px-3 py-1.5 rounded-md border border-rose-300 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950 text-xs">
+              <i class="fa-regular fa-trash-can"></i> Clear
+            </button>
           </div>
         </div>
       </header>
@@ -48,11 +51,13 @@
           </div>
           <div class="grow"></div>
           <div>
-            <span id="since" class="text-slate-500"><i class="fa-regular fa-clock mr-1"></i>since: —</span>
+            <span id="since" class="text-slate-500 mr-3"><i class="fa-regular fa-clock mr-1"></i>since: —</span>
+            <label class="text-slate-500 mr-1">namespace:</label>
+            <input id="nsFilter" placeholder="namespace" class="px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 w-36"/>
           </div>
         </div>
         <!-- Stats Grid -->
-        <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
             <div class="text-xs text-slate-500 flex items-center gap-2"><i class="fa-solid fa-circle-check text-emerald-500"></i> Hits</div>
             <div id="hits" class="text-2xl font-semibold mt-1">0</div>
@@ -85,6 +90,11 @@
             <div class="text-xs text-slate-500 flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation text-rose-600"></i> Errors</div>
             <div id="errors" class="text-2xl font-semibold mt-1">0</div>
           </div>
+          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <div class="text-xs text-slate-500 flex items-center gap-2"><i class="fa-regular fa-clock text-slate-500"></i> Avg Latency</div>
+            <div id="lat_avg" class="text-2xl font-semibold mt-1">—</div>
+            <div class="text-[11px] text-slate-500 mt-0.5">p95: <span id="lat_p95">—</span> · p99: <span id="lat_p99">—</span></div>
+          </div>
         </section>
         <!-- Two Columns: Drivers + Top Keys -->
         <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -111,6 +121,13 @@
               <tbody id="topKeysBody"></tbody>
             </table>
           </div>
+      </section>
+        <!-- Namespaces -->
+        <section class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="font-semibold text-sm"><i class="fa-regular fa-folder-open text-slate-500 mr-2"></i>Namespaces</h3>
+          </div>
+          <div id="namespacesList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2"></div>
         </section>
         <!-- Events Stream -->
         <section class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
@@ -197,6 +214,22 @@
           list.appendChild(row);
         });
       }
+      function renderNamespaces(metrics) {
+        const list = document.querySelector('#namespacesList');
+        if (!list) return;
+        list.innerHTML = '';
+        const entries = Object.entries(metrics.namespaces || {});
+        if (entries.length === 0) {
+          list.innerHTML = '<div class="text-xs text-slate-500">No namespace data.</div>';
+          return;
+        }
+        entries.forEach(([name,count])=>{
+          const card = document.createElement('div');
+          card.className = 'p-3 rounded border border-slate-200 dark:border-slate-700';
+          card.innerHTML = `<div class=\"flex items-center justify-between text-xs\"><span class=\"font-mono\">${name}</span><span class=\"text-slate-500\">${count}</span></div>`;
+          list.appendChild(card);
+        });
+      }
       function renderTopKeys(metrics) {
         const filter = ($('#filterKey').value || '').toLowerCase();
         const body = $('#topKeysBody');
@@ -224,9 +257,14 @@
           default: return `${base} bg-slate-100 text-slate-700`;
         }
       }
+      function nsParam() {
+        const ns = ($('#nsFilter').value || '').trim();
+        return ns ? `?namespace=${encodeURIComponent(ns)}` : '';
+      }
+
       async function loadMetrics() {
         try {
-          const res = await fetch('/api/metrics', { cache: 'no-store' });
+          const res = await fetch('/api/metrics' + nsParam(), { cache: 'no-store' });
           if (!res.ok) { setStatus(false); return; }
           const data = await res.json();
           $('#hits').textContent = data.hits || 0;
@@ -241,7 +279,11 @@
             const d = new Date(data.since * 1000);
             $('#since').textContent = `since: ${d.toLocaleString()}`;
           }
+          $('#lat_avg').textContent = (data.latency?.avg_ms ?? 0).toFixed ? (data.latency.avg_ms.toFixed(1) + ' ms') : '—';
+          $('#lat_p95').textContent = (data.latency?.p95_ms ?? 0).toFixed ? data.latency.p95_ms.toFixed(1) + ' ms' : '—';
+          $('#lat_p99').textContent = (data.latency?.p99_ms ?? 0).toFixed ? data.latency.p99_ms.toFixed(1) + ' ms' : '—';
           renderDrivers(data);
+          renderNamespaces(data);
           renderTopKeys(data);
           setStatus(true);
         } catch (e) { setStatus(false); }
@@ -249,7 +291,7 @@
       async function loadEvents() {
         try {
           const limit = parseInt($('#eventLimit').value || '200', 10);
-          const res = await fetch(`/api/events?limit=${limit}`, { cache: 'no-store' });
+          const res = await fetch(`/api/events?limit=${limit}` + (nsParam() ? `&${nsParam().slice(1)}` : ''), { cache: 'no-store' });
           if (!res.ok) return;
           let events = await res.json();
           const type = $('#typeFilter').value || '';
@@ -293,10 +335,16 @@
         restart();
         rateSel.addEventListener('change', restart);
         $('#btnRefresh').addEventListener('click', ()=>{ loadMetrics(); loadEvents(); });
+        $('#btnClear').addEventListener('click', async ()=>{
+          if (!confirm('Clear events file? This will rotate the current log.')) return;
+          try { await fetch('/api/events/clear', { method: 'POST' }); } catch {}
+          loadMetrics(); loadEvents();
+        });
         $('#filterKey').addEventListener('input', ()=>{ loadMetrics(); loadEvents(); });
         $('#clearFilter').addEventListener('click', ()=>{ $('#filterKey').value=''; loadMetrics(); loadEvents(); });
         $('#typeFilter').addEventListener('change', loadEvents);
         $('#eventLimit').addEventListener('change', loadEvents);
+        $('#nsFilter').addEventListener('input', ()=>{ loadMetrics(); loadEvents(); });
         $('#copyPath').addEventListener('click', async ()=>{
           try { await navigator.clipboard.writeText($('#eventsFile').textContent||''); } catch {}
         });
