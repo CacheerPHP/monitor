@@ -1,0 +1,7 @@
+Tests/*
+vendor/
+database/
+CacheerPHP/
+.env
+.env.example
+composer.lock

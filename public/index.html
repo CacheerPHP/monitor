@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cacheer Monitor</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; color: #1e293b; }
+      h1 { margin: 0 0 16px; font-size: 20px; }
+      .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+      .card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; background: #fff; }
+      .label { font-size: 12px; color: #475569; }
+      .value { font-size: 22px; font-weight: 600; }
+      .list { margin-top: 16px; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; }
+      footer { margin-top: 32px; font-size: 12px; color: #64748b; }
+    </style>
+  </head>
+  <body>
+    <h1>Cacheer Monitor</h1>
+    <div class="grid">
+      <div class="card"><div class="label">Hits</div><div id="hits" class="value">0</div></div>
+      <div class="card"><div class="label">Misses</div><div id="misses" class="value">0</div></div>
+      <div class="card"><div class="label">Hit Rate</div><div id="hit_rate" class="value">0%</div></div>
+      <div class="card"><div class="label">Puts</div><div id="puts" class="value">0</div></div>
+      <div class="card"><div class="label">Flushes</div><div id="flushes" class="value">0</div></div>
+      <div class="card"><div class="label">Renews</div><div id="renews" class="value">0</div></div>
+      <div class="card"><div class="label">Clears</div><div id="clears" class="value">0</div></div>
+      <div class="card"><div class="label">Errors</div><div id="errors" class="value">0</div></div>
+    </div>
+    <div class="list">
+      <h3>Drivers</h3>
+      <pre id="drivers" class="mono">{}</pre>
+    </div>
+    <div class="list">
+      <h3>Top Keys</h3>
+      <pre id="top_keys" class="mono">{}</pre>
+    </div>
+    <footer>
+      <div id="since" class="mono"></div>
+    </footer>
+
+    <script>
+      async function loadMetrics() {
+        try {
+          const res = await fetch('/api/metrics', { cache: 'no-store' });
+          if (!res.ok) return;
+          const data = await res.json();
+          document.getElementById('hits').textContent = data.hits || 0;
+          document.getElementById('misses').textContent = data.misses || 0;
+          document.getElementById('puts').textContent = data.puts || 0;
+          document.getElementById('flushes').textContent = data.flushes || 0;
+          document.getElementById('renews').textContent = data.renews || 0;
+          document.getElementById('clears').textContent = data.clears || 0;
+          document.getElementById('errors').textContent = data.errors || 0;
+          document.getElementById('hit_rate').textContent = ((data.hit_rate || 0) * 100).toFixed(1) + '%';
+          document.getElementById('drivers').textContent = JSON.stringify(data.drivers || {}, null, 2);
+          document.getElementById('top_keys').textContent = JSON.stringify(data.top_keys || {}, null, 2);
+          if (data.since) {
+            const d = new Date(data.since * 1000);
+            document.getElementById('since').textContent = 'Collecting since: ' + d.toLocaleString();
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+      loadMetrics();
+      setInterval(loadMetrics, 2000);
+    </script>
+  </body>
+  </html>
+

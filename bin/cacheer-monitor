@@ -1,0 +1,95 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+// Simple CLI for Cacheer Monitor
+// Usage:
+//   vendor/bin/cacheer-monitor serve [--port=9966] [--events=/path/to/events.jsonl]
+
+$argvCopy = $argv;
+array_shift($argvCopy);
+$cmd = $argvCopy[0] ?? 'help';
+
+function parseArgs(array $args): array {
+    $opts = [
+        'port' => 9966,
+        'events' => null,
+        'host' => '127.0.0.1'
+    ];
+    foreach ($args as $arg) {
+        if (str_starts_with($arg, '--port=')) {
+            $opts['port'] = (int) substr($arg, 7);
+        } elseif (str_starts_with($arg, '--events=')) {
+            $opts['events'] = substr($arg, 9);
+        } elseif (str_starts_with($arg, '--host=')) {
+            $opts['host'] = substr($arg, 7);
+        }
+    }
+    return $opts;
+}
+
+function rootDir(): string {
+    return dirname(__DIR__);
+}
+
+function serverCmd(string $host, int $port): string {
+    $docRoot = rootDir() . '/public';
+    $router  = rootDir() . '/server/router.php';
+    return sprintf('php -S %s:%d -t %s %s', escapeshellarg($host), $port, escapeshellarg($docRoot), escapeshellarg($router));
+}
+
+function ensureEventsFile(?string $path): string {
+    if ($path) {
+        return $path;
+    }
+    $default = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'cacheer-monitor.jsonl';
+    return $default;
+}
+
+switch ($cmd) {
+    case 'serve':
+        $opts = parseArgs(array_slice($argvCopy, 1));
+        $host = $opts['host'];
+        $port = $opts['port'];
+        $events = ensureEventsFile($opts['events']);
+
+        // Make EVENTS file path available to the router and reporter
+        putenv('CACHEER_MONITOR_EVENTS=' . $events);
+
+        $cmdLine = serverCmd($host, $port);
+        fwrite(STDOUT, "Cacheer Monitor starting...\n");
+        fwrite(STDOUT, "- Events file: {$events}\n");
+        fwrite(STDOUT, "- URL: http://{$host}:{$port}\n\n");
+
+        // Try to start the PHP built-in server
+        $descriptorspec = [
+            0 => STDIN,
+            1 => STDOUT,
+            2 => STDERR,
+        ];
+        $proc = proc_open($cmdLine, $descriptorspec, $pipes, rootDir());
+        if (is_resource($proc)) {
+            // Block until server stops
+            proc_close($proc);
+            exit(0);
+        }
+
+        // Fallback: instruct the user to start server manually
+        fwrite(STDOUT, "Couldn't start server automatically.\n");
+        fwrite(STDOUT, "Run this command from the package root:\n\n");
+        fwrite(STDOUT, $cmdLine . "\n");
+        exit(0);
+
+    case 'help':
+    default:
+        echo "Cacheer Monitor CLI\n\n";
+        echo "Commands:\n";
+        echo "  serve           Start the local dashboard server\n\n";
+        echo "Options:\n";
+        echo "  --host=127.0.0.1  Bind address (default 127.0.0.1)\n";
+        echo "  --port=9966       Port (default 9966)\n";
+        echo "  --events=/path    JSONL events file path (default system temp)\n\n";
+        exit(0);
+}
+

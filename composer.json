@@ -1,0 +1,19 @@
+{
+  "name": "cacheerphp/monitor",
+  "description": "Dashboard and telemetry reporter for CacheerPHP (separate package).",
+  "type": "library",
+  "license": "MIT",
+  "require": {
+    "php": ">=8.0",
+    "silviooosilva/cacheer-php": "^4.7 || ^5.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "Cacheer\\Monitor\\": "src/"
+    }
+  },
+  "bin": [
+    "bin/cacheer-monitor"
+  ]
+}
+
