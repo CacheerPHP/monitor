@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Cacheer\Monitor\Reporter;
 
+use Cacheer\Monitor\Support\Env;
+use Cacheer\Monitor\Support\Path;
+
 final class JsonlReporter implements MetricsReporterInterface
 {
     /** @var string */
@@ -23,8 +26,23 @@ final class JsonlReporter implements MetricsReporterInterface
      */
     public function __construct(?string $filePath = null, ?int $maxBytes = 10485760, ?string $instanceId = null)
     {
-        $envPath = getenv('CACHEER_MONITOR_EVENTS') ?: null;
-        $this->filePath = $filePath ?: ($envPath ?: (sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'cacheer-monitor.jsonl'));
+        $resolved = null;
+        if ($filePath && $filePath !== '') {
+            $resolved = Path::resolve($filePath, Env::root());
+        } else {
+            $osEnv = getenv('CACHEER_MONITOR_EVENTS');
+            if ($osEnv !== false && $osEnv !== null && $osEnv !== '') {
+                $resolved = Path::resolve((string) $osEnv, Env::root());
+            } else {
+                $dotEnv = Env::get('CACHEER_MONITOR_EVENTS');
+                if ($dotEnv) {
+                    $resolved = Path::resolve((string) $dotEnv, Env::root());
+                } else {
+                    $resolved = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'cacheer-monitor.jsonl';
+                }
+            }
+        }
+        $this->filePath = $resolved;
         $this->maxBytes = $maxBytes; // 10MB default rotation
         $this->instanceId = $instanceId ?: bin2hex(random_bytes(4));
         $this->ensureDir();
@@ -93,4 +111,3 @@ final class JsonlReporter implements MetricsReporterInterface
         }
     }
 }
-
