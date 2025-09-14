@@ -8,12 +8,12 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-Sl1G5mC8p4I5Jtf6cW41gO1oLqkQ7mJ3VJzpsQ1Q99Q8QQ5l4y1oSg3g3m7pR2vY0Dk3+f1b3nKXg0f5qkqzYw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
-  <body class="h-full bg-slate-50 text-slate-800 dark:bg-slate-900 dark:text-slate-100">
+  <body class="h-full bg-slate-50 text-slate-800 dark:bg-slate-900 dark:text-slate-100 overflow-x-hidden">
     <div class="min-h-full">
       <!-- Top Bar -->
       <header class="sticky top-0 z-10 bg-white/80 dark:bg-slate-800/80 backdrop-blur border-b border-slate-200 dark:border-slate-700">
-        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div class="flex items-center gap-3">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between min-w-0">
+          <div class="flex items-center gap-3 min-w-0">
             <i class="fa-solid fa-gauge-high text-blue-600 dark:text-blue-400 text-xl"></i>
             <h1 class="font-semibold text-lg">Cacheer Monitor</h1>
             <span id="statusDot" class="ml-2 inline-flex items-center gap-2 text-xs text-slate-500">
@@ -41,12 +41,12 @@
           </div>
         </div>
       </header>
-      <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+      <main class="max-w-7xl mx-auto px-4 py-6 space-y-6 min-w-0">
         <!-- Config bar -->
-        <div class="flex flex-col md:flex-row md:items-center gap-2 text-xs">
-          <div class="flex items-center gap-2">
+        <div class="flex flex-col md:flex-row md:items-center gap-2 text-xs min-w-0">
+          <div class="flex items-center gap-2 min-w-0">
             <span class="text-slate-500"><i class="fa-regular fa-file-lines mr-1"></i>Events file:</span>
-            <span id="eventsFile" class="font-mono truncate max-w-[60ch]">—</span>
+            <span id="eventsFile" class="font-mono truncate max-w-full">—</span>
             <button id="copyPath" class="px-2 py-1 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"><i class="fa-regular fa-copy"></i></button>
             <span id="origin" class="ml-1 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">origin: —</span>
           </div>
@@ -104,7 +104,7 @@
               <h3 class="font-semibold text-sm"><i class="fa-solid fa-server text-slate-500 mr-2"></i>Drivers</h3>
               <span class="text-xs text-slate-500" id="totalEvents">events: 0</span>
             </div>
-            <canvas id="driversChart" height="170" class="mb-3"></canvas>
+            <canvas id="driversChart" height="170" class="mb-3 w-full max-w-full"></canvas>
             <div id="driversList" class="space-y-2"></div>
           </div>
           <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
