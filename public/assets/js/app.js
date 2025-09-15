@@ -218,10 +218,28 @@ function setupEventListeners() {
     if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
       document.documentElement.classList.add('dark');
     }
+
+    function updateThemeUI() {
+      const isDark = document.documentElement.classList.contains('dark');
+      const icon = document.getElementById('themeIcon');
+      const label = document.getElementById('themeLabel');
+      if (icon) {
+        icon.className = 'fa-solid ' + (isDark ? 'fa-sun' : 'fa-moon');
+      }
+      if (label) {
+        label.textContent = isDark ? 'Light' : 'Dark';
+      }
+      toggleThemeButton.setAttribute('aria-pressed', isDark ? 'true' : 'false');
+      toggleThemeButton.title = isDark ? 'Switch to light theme' : 'Switch to dark theme';
+    }
+
+    updateThemeUI();
+
     toggleThemeButton.addEventListener('click', () => {
       document.documentElement.classList.toggle('dark');
       const isDark = document.documentElement.classList.contains('dark');
       localStorage.setItem('cacheer-theme', isDark ? 'dark' : 'light');
+      updateThemeUI();
     });
   }
 }
