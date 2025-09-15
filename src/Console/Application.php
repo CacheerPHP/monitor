@@ -6,6 +6,9 @@ namespace Cacheer\Monitor\Console;
 
 use Cacheer\Monitor\Console\Commands\ServeCommand;
 
+/**
+ * Minimal console application wiring CLI commands.
+ */
 final class Application
 {
     /** @var array<string, callable> */
@@ -21,45 +24,65 @@ final class Application
     }
 
     /**
+     * Register a command handler.
+     *
      * @param string $name
      * @param callable(array<string,string|int|null>):int $handler
+     * @return void
      */
     public function register(string $name, callable $handler): void
     {
         $this->commands[$name] = $handler;
     }
 
+    /**
+     * Execute the application with the given argv.
+     *
+     * @param list<string> $argv
+     * @return int Exit code
+     */
     public function run(array $argv): int
     {
         array_shift($argv); // script path
-        $cmd = $argv[0] ?? 'help';
-        $args = $this->parseOptions(array_slice($argv, 1));
-        if (!isset($this->commands[$cmd])) {
+        $commandName = $argv[0] ?? 'help';
+        $options = $this->parseOptions(array_slice($argv, 1));
+        if (!isset($this->commands[$commandName])) {
             $this->printHelp();
             return 1;
         }
-        return (int) call_user_func($this->commands[$cmd], $args);
+        return (int) call_user_func($this->commands[$commandName], $options);
     }
 
     /**
+     * Parse CLI options in the form --key=value into an associative array.
+     *
      * @param list<string> $args
      * @return array<string,string|int|null>
      */
     private function parseOptions(array $args): array
     {
-        $opts = [
+        $options = [
             'host' => '127.0.0.1',
             'port' => 9966,
             'events' => null,
         ];
         foreach ($args as $arg) {
-            if (str_starts_with($arg, '--host=')) { $opts['host'] = substr($arg, 7); }
-            elseif (str_starts_with($arg, '--port=')) { $opts['port'] = (int) substr($arg, 7); }
-            elseif (str_starts_with($arg, '--events=')) { $opts['events'] = substr($arg, 9); }
+            if (str_starts_with($arg, '--host=')) {
+                $options['host'] = substr($arg, 7);
+            } elseif (str_starts_with($arg, '--port=')) {
+                $options['port'] = (int) substr($arg, 7);
+            } elseif (str_starts_with($arg, '--events=')) {
+                $options['events'] = substr($arg, 9);
+            }
         }
-        return $opts;
+        return $options;
     }
 
+    /**
+     * Print CLI help.
+     *
+     * @return void
+     */
     private function printHelp(): void
     {
         echo "Cacheer Monitor CLI\n\n";
@@ -71,4 +94,3 @@ final class Application
         echo "  --events=/path    JSONL events file path (default system temp or .env)\n\n";
     }
 }
-

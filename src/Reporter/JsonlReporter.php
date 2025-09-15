@@ -7,6 +7,9 @@ namespace Cacheer\Monitor\Reporter;
 use Cacheer\Monitor\Support\Env;
 use Cacheer\Monitor\Support\Path;
 
+/**
+ * Reporter that appends events to a JSONL file with file rotation.
+ */
 final class JsonlReporter implements MetricsReporterInterface
 {
     /** @var string */
@@ -23,6 +26,11 @@ final class JsonlReporter implements MetricsReporterInterface
      * @param string|null $filePath Path to the JSONL file. If null, uses CACHEER_MONITOR_EVENTS env or temp dir.
      * @param int|null $maxBytes Maximum file size in bytes before rotation. Null to disable rotation.
      * @param string|null $instanceId Unique instance ID for this reporter. If null, a random ID is generated.
+     */
+    /**
+     * @param string|null $filePath   Explicit events file path (optional)
+     * @param int|null    $maxBytes   Max file size before rotation (null to disable)
+     * @param string|null $instanceId Optional instance id for tagging events
      */
     public function __construct(?string $filePath = null, ?int $maxBytes = 10485760, ?string $instanceId = null)
     {
@@ -59,6 +67,13 @@ final class JsonlReporter implements MetricsReporterInterface
      * @param string $type Event type identifier
      * @param array $payload Additional event data
      */
+    /**
+     * Append a single event to the JSONL file.
+     *
+     * @param string $type
+     * @param array<string,mixed> $payload
+     * @return void
+     */
     public function event(string $type, array $payload = []): void
     {
         $record = [
@@ -84,6 +99,7 @@ final class JsonlReporter implements MetricsReporterInterface
      * Ensure the directory for the JSONL file exists.
      * @return void
      */
+    /** Ensure target directory exists. */
     private function ensureDir(): void
     {
         $dir = dirname($this->filePath);
@@ -98,6 +114,7 @@ final class JsonlReporter implements MetricsReporterInterface
      * @param int $incomingBytes Size of the incoming write
      * @return void
      */
+    /** Rotate the file if adding bytes would exceed max threshold. */
     private function rotateIfNeeded(int $incomingBytes): void
     {
         if ($this->maxBytes === null) {

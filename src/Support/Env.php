@@ -6,9 +6,18 @@ namespace Cacheer\Monitor\Support;
 
 final class Env
 {
+    /** @var bool */
     private static bool $loaded = false;
+
+    /** @var array<string,mixed> */
     private static array $vars = [];
 
+    /** Get an environment variable, checking OS env first, then .env file.
+     *
+     * @param string $key Environment variable name
+     * @param mixed $default Default value if not set
+     * @return mixed Value of the environment variable or default
+     */
     public static function get(string $key, mixed $default = null): mixed
     {
         self::boot();
@@ -19,6 +28,11 @@ final class Env
         return self::$vars[$key] ?? $default;
     }
 
+    /**
+     * Load .env file if not already loaded
+     * 
+     * @return void
+     */
     private static function boot(): void
     {
         if (self::$loaded) return;
@@ -39,6 +53,10 @@ final class Env
         }
     }
 
+    /** Get the package root directory.
+     * 
+     * @return string Absolute path to the package root
+     */
     public static function root(): string
     {
         // cacheer-monitor/src/Support/Env.php -> repo root is two levels up from 'server'
