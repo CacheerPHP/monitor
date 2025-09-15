@@ -4,6 +4,24 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Cacheer Monitor</title>
+    <!-- Apply saved theme early to avoid flicker (default: light) -->
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('cacheer-theme');
+          if (saved === 'dark') {
+            document.documentElement.classList.add('dark');
+          } else if (saved === 'light') {
+            document.documentElement.classList.remove('dark');
+          }
+        } catch (e) { /* noop */ }
+      })();
+    </script>
+    <!-- Configure Tailwind CDN to use class-based dark mode -->
+    <script>
+      window.tailwind = window.tailwind || {};
+      tailwind.config = { darkMode: 'class' };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" referrerpolicy="no-referrer" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>

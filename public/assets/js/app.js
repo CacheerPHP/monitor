@@ -213,10 +213,11 @@ function setupEventListeners() {
   }
   const toggleThemeButton = getElementById('toggleTheme');
   if (toggleThemeButton) {
-    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
     const savedTheme = localStorage.getItem('cacheer-theme');
-    if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+    if (savedTheme === 'dark') {
       document.documentElement.classList.add('dark');
+    } else if (savedTheme === 'light') {
+      document.documentElement.classList.remove('dark');
     }
 
     function updateThemeUI() {
@@ -236,9 +237,15 @@ function setupEventListeners() {
     updateThemeUI();
 
     toggleThemeButton.addEventListener('click', () => {
-      document.documentElement.classList.toggle('dark');
-      const isDark = document.documentElement.classList.contains('dark');
-      localStorage.setItem('cacheer-theme', isDark ? 'dark' : 'light');
+      const root = document.documentElement;
+      const isDark = root.classList.contains('dark');
+      if (isDark) {
+        root.classList.remove('dark');
+        localStorage.setItem('cacheer-theme', 'light');
+      } else {
+        root.classList.add('dark');
+        localStorage.setItem('cacheer-theme', 'dark');
+      }
       updateThemeUI();
     });
   }
