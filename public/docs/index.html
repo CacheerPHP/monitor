@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cacheer Monitor — API Docs</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-slate-50 text-slate-800">
+    <main class="max-w-3xl mx-auto px-4 py-8">
+      <h1 class="text-2xl font-semibold mb-2">Cacheer Monitor — API & Usage</h1>
+      <p class="text-slate-600 mb-6">Reference for the local dashboard endpoints and CLI usage.</p>
+
+      <section class="mb-8">
+        <h2 class="text-xl font-semibold mb-2">Endpoints</h2>
+        <div class="space-y-4 text-sm">
+          <div>
+            <div class="font-mono bg-slate-100 rounded px-2 py-1 inline-block">GET /api/health</div>
+            <p class="text-slate-600 mt-1">Returns <code>{ ok: true }</code> if the server is running.</p>
+          </div>
+          <div>
+            <div class="font-mono bg-slate-100 rounded px-2 py-1 inline-block">GET /api/config</div>
+            <p class="text-slate-600 mt-1">Shows the current events file path and its origin (<em>env</em>, <em>dotenv</em>, or <em>default</em>).</p>
+          </div>
+          <div>
+            <div class="font-mono bg-slate-100 rounded px-2 py-1 inline-block">GET /api/metrics?namespace=foo</div>
+            <p class="text-slate-600 mt-1">Aggregated metrics with optional <code>namespace</code> filter. Includes hit rate, latency (avg, p95, p99), drivers, namespaces, types, and top keys.</p>
+          </div>
+          <div>
+            <div class="font-mono bg-slate-100 rounded px-2 py-1 inline-block">GET /api/events?limit=200&namespace=foo</div>
+            <p class="text-slate-600 mt-1">Returns recent events with optional <code>limit</code> and <code>namespace</code> parameters.</p>
+          </div>
+          <div>
+            <div class="font-mono bg-slate-100 rounded px-2 py-1 inline-block">POST /api/events/clear</div>
+            <p class="text-slate-600 mt-1">Rotates and truncates the current events file. Intended for local/dev use.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="mb-8">
+        <h2 class="text-xl font-semibold mb-2">CLI</h2>
+        <pre class="bg-slate-900 text-slate-100 rounded p-3 text-sm overflow-auto"><code>$ php bin/cacheer-monitor serve --host=127.0.0.1 --port=9966
+# Optional: choose a custom events file path
+$ export CACHEER_MONITOR_EVENTS=Tests/cacheer-monitor.json</code></pre>
+        <p class="text-slate-600 mt-2">The dashboard starts at <code>http://127.0.0.1:9966</code>. The events file path can be provided via OS env (<code>CACHEER_MONITOR_EVENTS</code>), <code>.env</code>, or falls back to a temp file.</p>
+      </section>
+
+      <section class="mb-8">
+        <h2 class="text-xl font-semibold mb-2">Generating Events</h2>
+        <p class="text-slate-600 mb-2">Use the included test scenarios to populate the dashboard:</p>
+        <pre class="bg-slate-900 text-slate-100 rounded p-3 text-sm overflow-auto"><code>$ php Tests/scenarios.php</code></pre>
+        <p class="text-slate-600 mt-2">This will emit a variety of events: hits, misses, putMany, tag/flushTag, TTL expirations, renew, increment/decrement, append, clear and flush.</p>
+      </section>
+
+      <section class="mb-8">
+        <h2 class="text-xl font-semibold mb-2">Configuration</h2>
+        <ul class="list-disc pl-6 text-slate-600 text-sm">
+          <li><code>CACHEER_MONITOR_EVENTS</code>: absolute or relative path to the JSONL events file (supports OS env and .env).</li>
+          <li>Relative paths are resolved against the package root.</li>
+          <li>Default path if none set: system temp directory, file <code>cacheer-monitor.jsonl</code>.</li>
+        </ul>
+      </section>
+
+      <footer class="text-slate-500 text-xs">Cacheer Monitor — local dev tool</footer>
+    </main>
+  </body>
+  </html>
+
