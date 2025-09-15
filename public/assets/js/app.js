@@ -2,11 +2,16 @@
 import { fetchConfig, fetchMetrics, fetchEvents, clearEventsFile } from './api.js';
 import { createDriversDoughnutChart } from './charts.js';
 import { updateStatusIndicator, updateConfigInfo, updateMetricCards, renderDriversList, renderTopKeysTable, renderNamespacesGrid, renderEventsStream } from './renderers.js';
+import { createLineChart } from './charts.js';
 
 const AppState = {
   refreshIntervalMs: 2000,
   refreshTimerId: null,
   driversChartInstance: null,
+  timeline: {
+    hitsMissesChart: null,
+    latencyChart: null,
+  },
 };
 
 function getElementById(id) {
@@ -97,9 +102,67 @@ async function loadAndRenderEvents() {
     if (eventsContainer) {
       renderEventsStream(eventsContainer, filteredEvents);
     }
+    // Update timelines from filtered events (last ~10 minutes)
+    updateTimelines(events);
   } catch (error) {
     // Ignore transient fetch errors
   }
+}
+
+function bucketize(events, windowMinutes = 10, bucketSeconds = 30) {
+  const now = Math.floor(Date.now() / 1000);
+  const start = now - windowMinutes * 60;
+  const bucketCount = Math.ceil(windowMinutes * 60 / bucketSeconds);
+  const labels = [];
+  const hits = new Array(bucketCount).fill(0);
+  const misses = new Array(bucketCount).fill(0);
+  const latencies = new Array(bucketCount).fill(null);
+  const latencyCounts = new Array(bucketCount).fill(0);
+
+  for (let i = 0; i < bucketCount; i++) {
+    const t = start + i * bucketSeconds;
+    labels.push(new Date(t * 1000).toLocaleTimeString());
+  }
+  for (const ev of events) {
+    const ts = Math.floor((ev.ts || 0));
+    if (ts < start) { continue; }
+    const idx = Math.min(labels.length - 1, Math.max(0, Math.floor((ts - start) / bucketSeconds)));
+    if (ev.type === 'hit') { hits[idx] += 1; }
+    if (ev.type === 'miss') { misses[idx] += 1; }
+    const d = ev?.payload?.duration_ms;
+    if (typeof d === 'number' && Number.isFinite(d)) {
+      latencies[idx] = (latencies[idx] ?? 0) + d;
+      latencyCounts[idx] += 1;
+    }
+  }
+  const avgLatency = latencies.map((sum, i) => {
+    if (sum === null || latencyCounts[i] === 0) return null;
+    return sum / latencyCounts[i];
+  });
+  return { labels, hits, misses, avgLatency };
+}
+
+function updateTimelines(allEvents) {
+  try {
+    const { labels, hits, misses, avgLatency } = bucketize(allEvents);
+    // Hits vs Misses chart
+    const ctx1 = document.getElementById('chartHitsMisses');
+    if (ctx1 && ctx1.getContext) {
+      if (AppState.timeline.hitsMissesChart) { AppState.timeline.hitsMissesChart.destroy(); }
+      AppState.timeline.hitsMissesChart = createLineChart(ctx1.getContext('2d'), labels, [
+        { label: 'Hits', data: hits, borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.2)', tension: 0.2, spanGaps: true },
+        { label: 'Misses', data: misses, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.2)', tension: 0.2, spanGaps: true },
+      ]);
+    }
+    // Latency chart
+    const ctx2 = document.getElementById('chartLatency');
+    if (ctx2 && ctx2.getContext) {
+      if (AppState.timeline.latencyChart) { AppState.timeline.latencyChart.destroy(); }
+      AppState.timeline.latencyChart = createLineChart(ctx2.getContext('2d'), labels, [
+        { label: 'Avg Latency (ms)', data: avgLatency, borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.2)', tension: 0.2, spanGaps: true },
+      ], { scales: { y: { beginAtZero: true } } });
+    }
+  } catch (e) { /* noop */ }
 }
 
 function setupEventListeners() {
@@ -256,6 +319,16 @@ async function bootstrap() {
   await loadAndRenderMetrics();
   await loadAndRenderEvents();
   setupEventListeners();
+
+  // SSE live updates to trigger refresh (fallback to polling if not supported)
+  try {
+    if ('EventSource' in window) {
+      const es = new EventSource('/api/events/stream');
+      es.onmessage = function () { void loadAndRenderEvents(); void loadAndRenderMetrics(); };
+      es.addEventListener('ping', function () { /* heartbeat */ });
+      es.onerror = function () { es.close(); };
+    }
+  } catch (e) { /* noop */ }
 }
 
 bootstrap();

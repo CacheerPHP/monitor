@@ -37,6 +37,11 @@ final class Router
         if ($path === '/api/events/clear') {
             return $this->controller->clear($request);
         }
+        if ($path === '/api/events/stream') {
+            // Stream outputs directly and exits
+            $this->controller->stream($request);
+            return new Response(200, [], '');
+        }
         // default: return index.html
         return new Response(200, ['Content-Type' => 'text/html; charset=utf-8'], (string) @file_get_contents($this->publicDir . '/index.html'));
     }

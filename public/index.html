@@ -166,6 +166,18 @@
           </div>
           <div id="namespacesList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2"></div>
         </section>
+
+        <!-- Timeline Charts -->
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <h3 class="font-semibold text-sm mb-2"><i class="fa-solid fa-chart-line text-slate-500 mr-2"></i>Hits vs Misses (last 10 min)</h3>
+            <canvas id="chartHitsMisses" height="180" class="w-full max-w-full"></canvas>
+          </div>
+          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <h3 class="font-semibold text-sm mb-2"><i class="fa-solid fa-wave-square text-slate-500 mr-2"></i>Latency (avg ms, last 10 min)</h3>
+            <canvas id="chartLatency" height="180" class="w-full max-w-full"></canvas>
+          </div>
+        </section>
         <!-- Events Stream -->
         <section class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
           <div class="flex items-center justify-between mb-2">

@@ -22,3 +22,22 @@ export function createDriversDoughnutChart(canvasContext, labels, values) {
   });
 }
 
+export function createLineChart(canvasContext, labels, datasets, options = {}) {
+  // eslint-disable-next-line no-undef
+  return new Chart(canvasContext, {
+    type: 'line',
+    data: {
+      labels,
+      datasets,
+    },
+    options: Object.assign({
+      spanGaps: true,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { ticks: { maxRotation: 0, autoSkip: true } },
+        y: { beginAtZero: true },
+      },
+      plugins: { legend: { display: true } },
+    }, options),
+  });
+}

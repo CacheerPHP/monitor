@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cacheer\Monitor\Http;
 
+use Cacheer\Monitor\Support\Env;
 use Cacheer\Monitor\Domain\Aggregator;
 use Cacheer\Monitor\Domain\EventStore;
 use Cacheer\Monitor\Support\ConfigResolver;
@@ -89,7 +90,61 @@ final class ApiController
         if ($request->method !== 'POST') {
             return new Response(405, ['Allow' => 'POST'], json_encode(['ok' => false, 'error' => 'Method Not Allowed']));
         }
+        // Optional token protection via CACHEER_MONITOR_TOKEN
+        $requiredToken = Env::get('CACHEER_MONITOR_TOKEN');
+        if ($requiredToken) {
+            $provided = $_SERVER['HTTP_X_MONITOR_TOKEN'] ?? ($_GET['token'] ?? '');
+            if (!\is_string($provided) || $provided !== $requiredToken) {
+                return new Response(401, ['Content-Type' => 'application/json'], json_encode(['ok' => false, 'error' => 'Unauthorized']));
+            }
+        }
         $cleared = $this->store->clear();
         return Response::json(['ok' => $cleared]);
+    }
+
+    /**
+     * Server-Sent Events stream that emits new event lines as they are appended.
+     * Runs for ~30 seconds and then closes (client should reconnect).
+     *
+     * @param Request $request
+     * @return void (outputs directly)
+     */
+    public function stream(Request $request): void
+    {
+        @ignore_user_abort(true);
+        @set_time_limit(0);
+        header('Content-Type: text/event-stream');
+        header('Cache-Control: no-cache');
+        header('Connection: keep-alive');
+
+        $file = $this->store->path();
+        $lastSize = is_file($file) ? (int) filesize($file) : 0;
+        $start = time();
+        while (!connection_aborted() && (time() - $start) < 30) {
+            clearstatcache(true, $file);
+            $currentSize = is_file($file) ? (int) filesize($file) : 0;
+            if ($currentSize > $lastSize) {
+                $fh = @fopen($file, 'rb');
+                if ($fh) {
+                    @fseek($fh, $lastSize);
+                    $chunk = stream_get_contents($fh) ?: '';
+                    @fclose($fh);
+                    $lines = preg_split("/[\r\n]+/", $chunk, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+                    foreach ($lines as $line) {
+                        echo 'data: ' . $line . "\n\n";
+                    }
+                    @ob_flush();
+                    @flush();
+                }
+                $lastSize = $currentSize;
+            } else {
+                // heartbeat
+                echo "event: ping\n";
+                echo 'data: ' . json_encode(['ts' => microtime(true)]) . "\n\n";
+                @ob_flush();
+                @flush();
+            }
+            usleep(500000); // 0.5s
+        }
     }
 }

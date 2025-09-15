@@ -31,7 +31,21 @@ export async function fetchEvents(limit = 200, namespaceFilter = '') {
 }
 
 export async function clearEventsFile() {
-  const response = await fetch('/api/events/clear', { method: 'POST' });
+  const headers = {};
+  try {
+    const savedToken = localStorage.getItem('cacheer-token');
+    if (savedToken) {
+      headers['X-Monitor-Token'] = savedToken;
+    }
+  } catch (e) { /* noop */ }
+  let response = await fetch('/api/events/clear', { method: 'POST', headers });
+  if (response.status === 401) {
+    const token = prompt('Enter monitor token to clear events (set CACHEER_MONITOR_TOKEN in .env):');
+    if (token) {
+      try { localStorage.setItem('cacheer-token', token); } catch (e) { /* noop */ }
+      response = await fetch('/api/events/clear', { method: 'POST', headers: { 'X-Monitor-Token': token } });
+    }
+  }
   if (!response.ok) {
     return false;
   }
@@ -42,4 +56,3 @@ export async function clearEventsFile() {
     return false;
   }
 }
-
