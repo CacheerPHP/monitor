@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Cacheer Monitor</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-Sl1G5mC8p4I5Jtf6cW41gO1oLqkQ7mJ3VJzpsQ1Q99Q8QQ5l4y1oSg3g3m7pR2vY0Dk3+f1b3nKXg0f5qkqzYw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" referrerpolicy="no-referrer" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
   <body class="h-full bg-slate-50 text-slate-800 dark:bg-slate-900 dark:text-slate-100 overflow-x-hidden">
     <div class="min-h-full">
       <!-- Top Bar -->
       <header class="sticky top-0 z-10 bg-white/80 dark:bg-slate-800/80 backdrop-blur border-b border-slate-200 dark:border-slate-700">
-        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between min-w-0 flex-wrap gap-y-2">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-col lg:flex-row items-start lg:items-center justify-between min-w-0 gap-y-2">
           <div class="flex items-center gap-3 min-w-0">
             <i class="fa-solid fa-gauge-high text-blue-600 dark:text-blue-400 text-xl"></i>
             <h1 class="font-semibold text-lg">Cacheer Monitor</h1>
@@ -21,9 +21,16 @@
               <span id="lastUpdated">—</span>
             </span>
           </div>
-          <div class="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
-            <button id="toggleTheme" class="px-3 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs">
-              <i class="fa-solid fa-moon"></i>
+          <div class="flex items-center gap-2 w-full lg:w-auto justify-start lg:justify-end shrink-0 flex-wrap">
+            <button
+              id="toggleTheme"
+              type="button"
+              class="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs"
+              title="Toggle theme"
+              aria-pressed="false"
+            >
+              <i id="themeIcon" class="fa-solid fa-moon"></i>
+              <span id="themeLabel" class="hidden sm:inline">Theme</span>
             </button>
             <select id="refreshRate" class="px-2 py-1.5 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" title="Auto refresh interval (choose Off for manual)">
               <option value="off">Off (manual)</option>
@@ -32,7 +39,7 @@
               <option value="5000" selected>5s</option>
               <option value="10000">10s</option>
             </select>
-            <a href="./docs/index.html" class="px-3 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs" title="Open API docs">
+            <a href="./docs/index.html" class="hidden md:inline-flex px-3 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs" title="Open API docs">
               <i class="fa-regular fa-circle-question"></i> Docs
             </a>
             <button id="btnRefresh" class="px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs">
@@ -52,12 +59,12 @@
             <span id="eventsFile" class="font-mono truncate max-w-full">—</span>
             <button
               id="copyPath"
-              class="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-400 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-700 dark:focus:ring-slate-600"
+              class="hidden lg:inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-400 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-700 dark:focus:ring-slate-600"
               title="Copy events file path"
               aria-label="Copy events file path"
             >
               <i class="fa-regular fa-copy"></i>
-              <span class="hidden sm:inline">Copy</span>
+              <span class="hidden lg:inline">Copy</span>
             </button>
             <span id="origin" class="ml-1 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">origin: —</span>
           </div>
