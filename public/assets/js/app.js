@@ -58,7 +58,9 @@ function renderDrivers(metrics) {
 async function loadAndRenderMetrics() {
   try {
     const namespaceFilter = getNamespaceFilter();
-    const metrics = await fetchMetrics(namespaceFilter);
+    const limitSelect = getElementById('eventLimit');
+    const metricsLimit = limitSelect ? Number(limitSelect.value || 500) : 500;
+    const metrics = await fetchMetrics(namespaceFilter, metricsLimit);
     updateMetricCards(metrics);
     renderDrivers(metrics);
     const namespacesListContainer = getElementById('namespacesList');

@@ -14,17 +14,20 @@ use Cacheer\Monitor\Support\ConfigResolver;
  */
 final class ApiController
 {
-    public function __construct(private readonly EventStore $store) {}
+    public function __construct() {}
 
     /**
      * Factory method using current configuration to resolve the events file.
      *
      * @return self
      */
-    public static function fromConfig(): self
+    public static function fromConfig(): self { return new self(); }
+
+    /** Resolve an EventStore for current config (re-evaluates each call). */
+    private function resolveStore(): EventStore
     {
         [$eventsFilePath] = ConfigResolver::eventsFileWithOrigin();
-        return new self(new EventStore($eventsFilePath));
+        return new EventStore($eventsFilePath);
     }
 
     /**
@@ -57,7 +60,9 @@ final class ApiController
     public function metrics(Request $request): Response
     {
         $namespaceFilter = isset($request->query['namespace']) ? (string) $request->query['namespace'] : null;
-        $eventRecords = $this->store->readAll(0, $namespaceFilter);
+        $limitParam = isset($request->query['limit']) ? (int) $request->query['limit'] : 1000; // default: last 1000 events
+        if ($limitParam < 0) { $limitParam = 0; }
+        $eventRecords = $this->resolveStore()->readAll($limitParam, $namespaceFilter);
         $stats = Aggregator::summarize($eventRecords);
         return Response::json($stats);
     }
@@ -72,7 +77,7 @@ final class ApiController
     {
         $limit = isset($request->query['limit']) ? (int) $request->query['limit'] : 200;
         $namespaceFilter = isset($request->query['namespace']) ? (string) $request->query['namespace'] : null;
-        $eventRecords = $this->store->readAll($limit > 0 ? $limit : 0, $namespaceFilter);
+        $eventRecords = $this->resolveStore()->readAll($limit > 0 ? $limit : 0, $namespaceFilter);
         if ($limit > 0 && count($eventRecords) > $limit) {
             $eventRecords = array_slice($eventRecords, -$limit);
         }
@@ -98,7 +103,7 @@ final class ApiController
                 return new Response(401, ['Content-Type' => 'application/json'], json_encode(['ok' => false, 'error' => 'Unauthorized']));
             }
         }
-        $cleared = $this->store->clear();
+        $cleared = $this->resolveStore()->clear();
         return Response::json(['ok' => $cleared]);
     }
 
@@ -117,7 +122,7 @@ final class ApiController
         header('Cache-Control: no-cache');
         header('Connection: keep-alive');
 
-        $file = $this->store->path();
+        $file = $this->resolveStore()->path();
         $lastSize = is_file($file) ? (int) filesize($file) : 0;
         $start = time();
         while (!connection_aborted() && (time() - $start) < 30) {

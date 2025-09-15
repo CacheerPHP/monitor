@@ -8,8 +8,15 @@ export async function fetchConfig() {
   return await response.json();
 }
 
-export async function fetchMetrics(namespaceFilter = '') {
-  const query = namespaceFilter ? `?namespace=${encodeURIComponent(namespaceFilter)}` : '';
+export async function fetchMetrics(namespaceFilter = '', limit = 1000) {
+  const params = new URLSearchParams();
+  if (namespaceFilter) {
+    params.set('namespace', namespaceFilter);
+  }
+  if (typeof limit === 'number' && isFinite(limit) && limit > 0) {
+    params.set('limit', String(limit));
+  }
+  const query = params.toString() ? `?${params.toString()}` : '';
   const response = await fetch(`/api/metrics${query}`, { cache: 'no-store' });
   if (!response.ok) {
     throw new Error('Failed to load metrics');
