@@ -19,12 +19,33 @@
       </div>
 
       <header class="sticky top-0 z-20 border-b border-slate-800/60 bg-slate-950/70 px-4 py-4 backdrop-blur supports-[backdrop-filter]:bg-slate-950/50">
-        <div class="mx-auto flex max-w-5xl flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Cacheer Monitor</p>
-            <h1 class="text-xl font-semibold text-slate-100">Documentation &amp; Usage Guide</h1>
+        <div class="mx-auto max-w-5xl">
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Cacheer Monitor</p>
+              <h1 class="text-xl font-semibold text-slate-100">Documentation &amp; Usage Guide</h1>
+            </div>
+            <button
+              id="docsNavToggle"
+              class="inline-flex items-center gap-2 rounded-lg border border-slate-800/70 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 transition hover:border-brand-400 hover:text-brand-300 md:hidden"
+              type="button"
+              aria-label="Toggle navigation"
+              aria-controls="docsNav"
+              aria-expanded="false"
+            >
+              <span class="sr-only">Toggle navigation</span>
+              <svg data-icon="open" class="h-5 w-5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 6h16M4 12h16M4 18h16"></path>
+              </svg>
+              <svg data-icon="close" class="hidden h-5 w-5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 6l12 12M6 18L18 6"></path>
+              </svg>
+            </button>
           </div>
-          <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-300">
+          <nav
+            id="docsNav"
+            class="mt-4 hidden flex-col gap-2 text-sm text-slate-300 md:mt-3 md:flex md:flex-row md:flex-wrap md:items-center md:gap-x-6 md:gap-y-2"
+          >
             <a class="hover:text-brand-300 transition" href="#overview">Overview</a>
             <a class="hover:text-brand-300 transition" href="#quick-start">Quick Start</a>
             <a class="hover:text-brand-300 transition" href="#api">API</a>
@@ -36,7 +57,7 @@
         </div>
       </header>
 
-      <main class="mx-auto max-w-5xl space-y-16 px-4 py-12">
+      <main class="mx-auto max-w-5xl space-y-16 px-4 py-12 sm:px-6">
         <section id="overview" class="space-y-6">
           <h2 class="text-2xl font-semibold text-slate-50">Overview</h2>
           <p class="text-slate-300">
@@ -70,12 +91,12 @@
             <h2 class="text-2xl font-semibold text-slate-50">Quick Start</h2>
             <p class="text-slate-300">Spin up the local dashboard in under a minute.</p>
           </div>
-          <div class="grid gap-6 lg:grid-cols-[1.2fr,0.8fr]">
+          <div class="grid gap-6 lg:grid-cols-[1.2fr,0.8fr] lg:items-stretch">
             <div class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
               <ol class="space-y-3 text-sm text-slate-200 marker:text-brand-400">
                 <li>Install dependencies: <code class="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-xs">composer install</code>.</li>
                 <li>Launch the server:
-                  <pre class="mt-2 rounded-xl bg-slate-950/60 p-4 text-xs text-slate-200"><code>$ php bin/cacheer-monitor serve --host=127.0.0.1 --port=9966</code></pre>
+                  <pre class="mt-2 rounded-xl bg-slate-950/60 p-4 text-xs text-slate-200 overflow-x-auto"><code>$ php bin/cacheer-monitor serve --host=127.0.0.1 --port=9966</code></pre>
                 </li>
                 <li>Optionally point to a custom events file before starting: <code class="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-xs">export CACHEER_MONITOR_EVENTS=/path/to/cacheer.jsonl</code>.</li>
                 <li>Visit <span class="font-mono text-brand-300">http://127.0.0.1:9966</span> in your browser.</li>
@@ -84,7 +105,7 @@
             <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 text-sm text-slate-300">
               <h3 class="text-sm font-semibold text-slate-100">Populate Sample Data</h3>
               <p class="mt-2">Use the bundled scenarios to emit events covering every driver operation:</p>
-              <pre class="mt-3 rounded-xl bg-slate-950/60 p-4 text-xs text-slate-200"><code>$ php Tests/scenarios.php
+              <pre class="mt-3 rounded-xl bg-slate-950/60 p-4 text-xs text-slate-200 overflow-x-auto"><code>$ php Tests/scenarios.php
 $ php Tests/scenarios_advanced.php  # load heavier traffic + error cases</code></pre>
               <p class="mt-3 text-slate-400">Each run appends to the configured JSONL file; use the dashboard “Clear” button or the API to rotate the file.</p>
             </div>
@@ -326,5 +347,6 @@ $ php Tests/scenarios_advanced.php  # load heavier traffic + error cases</code><
         Cacheer Monitor &mdash; crafted for local debugging &amp; demos. Built with PHP + Tailwind.
       </footer>
     </div>
+    <script src="./assets/js/docs.js" defer></script>
   </body>
 </html>
