@@ -276,44 +276,6 @@ function setupEventListeners() {
       }
     });
   }
-  const toggleThemeButton = getElementById('toggleTheme');
-  if (toggleThemeButton) {
-    const savedTheme = localStorage.getItem('cacheer-theme');
-    if (savedTheme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else if (savedTheme === 'light') {
-      document.documentElement.classList.remove('dark');
-    }
-
-    function updateThemeUI() {
-      const isDark = document.documentElement.classList.contains('dark');
-      const icon = document.getElementById('themeIcon');
-      const label = document.getElementById('themeLabel');
-      if (icon) {
-        icon.className = 'fa-solid ' + (isDark ? 'fa-sun' : 'fa-moon');
-      }
-      if (label) {
-        label.textContent = isDark ? 'Light' : 'Dark';
-      }
-      toggleThemeButton.setAttribute('aria-pressed', isDark ? 'true' : 'false');
-      toggleThemeButton.title = isDark ? 'Switch to light theme' : 'Switch to dark theme';
-    }
-
-    updateThemeUI();
-
-    toggleThemeButton.addEventListener('click', () => {
-      const root = document.documentElement;
-      const isDark = root.classList.contains('dark');
-      if (isDark) {
-        root.classList.remove('dark');
-        localStorage.setItem('cacheer-theme', 'light');
-      } else {
-        root.classList.add('dark');
-        localStorage.setItem('cacheer-theme', 'dark');
-      }
-      updateThemeUI();
-    });
-  }
 }
 
 async function bootstrap() {
