@@ -27,7 +27,7 @@ final class Application
      * Register a command handler.
      *
      * @param string $name
-     * @param callable(array<string,string|int|null>):int $handler
+     * @param callable(array<string,int|string|bool|null>):int $handler
      * @return void
      */
     public function register(string $name, callable $handler): void
@@ -57,7 +57,7 @@ final class Application
      * Parse CLI options in the form --key=value into an associative array.
      *
      * @param list<string> $args
-     * @return array<string,string|int|null>
+     * @return array<string,int|string|bool|null>
      */
     private function parseOptions(array $args): array
     {
@@ -65,6 +65,7 @@ final class Application
             'host' => '127.0.0.1',
             'port' => 9966,
             'events' => null,
+            'quiet' => false,
         ];
         foreach ($args as $arg) {
             if (str_starts_with($arg, '--host=')) {
@@ -73,6 +74,11 @@ final class Application
                 $options['port'] = (int) substr($arg, 7);
             } elseif (str_starts_with($arg, '--events=')) {
                 $options['events'] = substr($arg, 9);
+            } elseif ($arg === '--quiet') {
+                $options['quiet'] = true;
+            } elseif (str_starts_with($arg, '--quiet=')) {
+                $value = strtolower((string) substr($arg, 8));
+                $options['quiet'] = in_array($value, ['1', 'true', 'yes', 'on'], true);
             }
         }
         return $options;
@@ -91,6 +97,7 @@ final class Application
         echo "Options:\n";
         echo "  --host=127.0.0.1  Bind address (default 127.0.0.1)\n";
         echo "  --port=9966       Port (default 9966)\n";
-        echo "  --events=/path    JSONL events file path (default system temp or .env)\n\n";
+        echo "  --events=/path    JSONL events file path (default system temp or .env)\n";
+        echo "  --quiet           Suppress server startup logs\n\n";
     }
 }
