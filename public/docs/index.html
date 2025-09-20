@@ -1,68 +1,349 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="h-full">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Cacheer Monitor — API Docs</title>
+    <title>Cacheer Monitor Documentation</title>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'system-ui', 'sans-serif'],
+              mono: ['JetBrains Mono', 'Menlo', 'monospace'],
+            },
+            colors: {
+              brand: {
+                300: '#7dd3fc',
+                400: '#38bdf8',
+                500: '#0ea5e9',
+              },
+            },
+          },
+        },
+      };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
   </head>
-  <body class="bg-slate-50 text-slate-800">
-    <main class="max-w-3xl mx-auto px-4 py-8">
-      <h1 class="text-2xl font-semibold mb-2">Cacheer Monitor — API & Usage</h1>
-      <p class="text-slate-600 mb-6">Reference for the local dashboard endpoints and CLI usage.</p>
+  <body class="min-h-screen bg-slate-950 font-sans text-slate-100">
+    <div class="relative isolate overflow-hidden">
+      <div class="pointer-events-none absolute inset-0 -z-10">
+        <div class="mx-auto h-80 w-[110%] max-w-6xl bg-gradient-to-b from-sky-500/30 via-slate-950/80 to-slate-950 blur-3xl"></div>
+      </div>
 
-      <section class="mb-8">
-        <h2 class="text-xl font-semibold mb-2">Endpoints</h2>
-        <div class="space-y-4 text-sm">
+      <header class="sticky top-0 z-20 border-b border-slate-800/60 bg-slate-950/70 px-4 py-4 backdrop-blur supports-[backdrop-filter]:bg-slate-950/50">
+        <div class="mx-auto flex max-w-5xl flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <div class="font-mono bg-slate-100 rounded px-2 py-1 inline-block">GET /api/health</div>
-            <p class="text-slate-600 mt-1">Returns <code>{ ok: true }</code> if the server is running.</p>
+            <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Cacheer Monitor</p>
+            <h1 class="text-xl font-semibold text-slate-100">Documentation &amp; Usage Guide</h1>
           </div>
-          <div>
-            <div class="font-mono bg-slate-100 rounded px-2 py-1 inline-block">GET /api/config</div>
-            <p class="text-slate-600 mt-1">Shows the current events file path and its origin (<em>env</em>, <em>dotenv</em>, or <em>default</em>).</p>
-          </div>
-          <div>
-            <div class="font-mono bg-slate-100 rounded px-2 py-1 inline-block">GET /api/metrics?namespace=foo</div>
-            <p class="text-slate-600 mt-1">Aggregated metrics with optional <code>namespace</code> filter. Includes hit rate, latency (avg, p95, p99), drivers, namespaces, types, and top keys.</p>
-          </div>
-          <div>
-            <div class="font-mono bg-slate-100 rounded px-2 py-1 inline-block">GET /api/events?limit=200&namespace=foo</div>
-            <p class="text-slate-600 mt-1">Returns recent events with optional <code>limit</code> and <code>namespace</code> parameters.</p>
-          </div>
-          <div>
-            <div class="font-mono bg-slate-100 rounded px-2 py-1 inline-block">POST /api/events/clear</div>
-            <p class="text-slate-600 mt-1">Rotates and truncates the current events file. Intended for local/dev use.</p>
-          </div>
+          <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-300">
+            <a class="hover:text-brand-300 transition" href="#overview">Overview</a>
+            <a class="hover:text-brand-300 transition" href="#quick-start">Quick Start</a>
+            <a class="hover:text-brand-300 transition" href="#api">API</a>
+            <a class="hover:text-brand-300 transition" href="#cli">CLI</a>
+            <a class="hover:text-brand-300 transition" href="#config">Configuration</a>
+            <a class="hover:text-brand-300 transition" href="#workflows">Workflows</a>
+            <a class="hover:text-brand-300 transition" href="#troubleshooting">Troubleshooting</a>
+          </nav>
         </div>
-      </section>
+      </header>
 
-      <section class="mb-8">
-        <h2 class="text-xl font-semibold mb-2">CLI</h2>
-        <pre class="bg-slate-900 text-slate-100 rounded p-3 text-sm overflow-auto"><code>$ php bin/cacheer-monitor serve --host=127.0.0.1 --port=9966
-# Optional: choose a custom events file path
-$ export CACHEER_MONITOR_EVENTS=Tests/cacheer-monitor.json</code></pre>
-        <p class="text-slate-600 mt-2">The dashboard starts at <code>http://127.0.0.1:9966</code>. The events file path can be provided via OS env (<code>CACHEER_MONITOR_EVENTS</code>), <code>.env</code>, or falls back to a temp file.</p>
-      </section>
+      <main class="mx-auto max-w-5xl space-y-16 px-4 py-12">
+        <section id="overview" class="space-y-6">
+          <h2 class="text-2xl font-semibold text-slate-50">Overview</h2>
+          <p class="text-slate-300">
+            Cacheer Monitor is a local dashboard that watches a JSONL events log emitted by Cacheer PHP clients. It visualises cache
+            traffic, latency, drivers, and key usage in near-real time so you can debug workloads or showcase Cacheer behaviour.
+          </p>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+              <h3 class="text-sm font-semibold text-slate-100">Core Features</h3>
+              <ul class="mt-3 space-y-2 text-sm text-slate-300">
+                <li>Live metrics (hits, misses, puts, flushes, latency percentiles).</li>
+                <li>Event stream explorer with filtering by namespace, type, and key.</li>
+                <li>Drivers distribution donut, namespace breakdown, top key leaderboard.</li>
+                <li>Lightweight JSONL ingestion without external dependencies.</li>
+              </ul>
+            </div>
+            <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+              <h3 class="text-sm font-semibold text-slate-100">How It Works</h3>
+              <ul class="mt-3 space-y-2 text-sm text-slate-300">
+                <li>Cacheer adapters append events to a JSONL file on disk.</li>
+                <li>The monitor exposes a small HTTP API backed by that file.</li>
+                <li>The SPA polls (and optionally streams) metrics + events.</li>
+                <li>CLI helpers manage the dev server and example scenarios.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
 
-      <section class="mb-8">
-        <h2 class="text-xl font-semibold mb-2">Generating Events</h2>
-        <p class="text-slate-600 mb-2">Use the included test scenarios to populate the dashboard:</p>
-        <pre class="bg-slate-900 text-slate-100 rounded p-3 text-sm overflow-auto"><code>$ php Tests/scenarios.php</code></pre>
-        <p class="text-slate-600 mt-2">This will emit a variety of events: hits, misses, putMany, tag/flushTag, TTL expirations, renew, increment/decrement, append, clear and flush.</p>
-      </section>
+        <section id="quick-start" class="space-y-6">
+          <div class="space-y-3">
+            <h2 class="text-2xl font-semibold text-slate-50">Quick Start</h2>
+            <p class="text-slate-300">Spin up the local dashboard in under a minute.</p>
+          </div>
+          <div class="grid gap-6 lg:grid-cols-[1.2fr,0.8fr]">
+            <div class="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
+              <ol class="space-y-3 text-sm text-slate-200 marker:text-brand-400">
+                <li>Install dependencies: <code class="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-xs">composer install</code>.</li>
+                <li>Launch the server:
+                  <pre class="mt-2 rounded-xl bg-slate-950/60 p-4 text-xs text-slate-200"><code>$ php bin/cacheer-monitor serve --host=127.0.0.1 --port=9966</code></pre>
+                </li>
+                <li>Optionally point to a custom events file before starting: <code class="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-xs">export CACHEER_MONITOR_EVENTS=/path/to/cacheer.jsonl</code>.</li>
+                <li>Visit <span class="font-mono text-brand-300">http://127.0.0.1:9966</span> in your browser.</li>
+              </ol>
+            </div>
+            <div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 text-sm text-slate-300">
+              <h3 class="text-sm font-semibold text-slate-100">Populate Sample Data</h3>
+              <p class="mt-2">Use the bundled scenarios to emit events covering every driver operation:</p>
+              <pre class="mt-3 rounded-xl bg-slate-950/60 p-4 text-xs text-slate-200"><code>$ php Tests/scenarios.php
+$ php Tests/scenarios_advanced.php  # load heavier traffic + error cases</code></pre>
+              <p class="mt-3 text-slate-400">Each run appends to the configured JSONL file; use the dashboard “Clear” button or the API to rotate the file.</p>
+            </div>
+          </div>
+        </section>
 
-      <section class="mb-8">
-        <h2 class="text-xl font-semibold mb-2">Configuration</h2>
-        <ul class="list-disc pl-6 text-slate-600 text-sm">
-          <li><code>CACHEER_MONITOR_EVENTS</code>: absolute or relative path to the JSONL events file (supports OS env and .env).</li>
-          <li>Relative paths are resolved against the package root.</li>
-          <li>Default path if none set: system temp directory, file <code>cacheer-monitor.jsonl</code>.</li>
-        </ul>
-      </section>
+        <section id="api" class="space-y-6">
+          <div class="space-y-3">
+            <h2 class="text-2xl font-semibold text-slate-50">API Reference</h2>
+            <p class="text-slate-300">REST endpoints power the SPA and provide a friendly surface for tooling or scripts.</p>
+          </div>
 
-      <footer class="text-slate-500 text-xs">Cacheer Monitor — local dev tool</footer>
-    </main>
+          <div class="space-y-6">
+            <h3 class="text-lg font-semibold text-slate-100">REST Endpoints</h3>
+            <div class="grid gap-5 md:grid-cols-2">
+              <article class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 text-sm">
+                <div class="flex items-center justify-between">
+                  <span class="inline-flex items-center gap-2 rounded-full bg-slate-800 px-3 py-1 font-mono text-xs text-brand-300">GET <span>/api/health</span></span>
+                  <span class="text-xs text-slate-400">Cache health</span>
+                </div>
+                <p class="mt-3 text-slate-300">Simple liveness probe. Returns <code class="font-mono text-brand-300">{ "ok": true }</code> when the server is reachable.</p>
+              </article>
+
+              <article class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 text-sm">
+                <div class="flex items-center justify-between">
+                  <span class="inline-flex items-center gap-2 rounded-full bg-slate-800 px-3 py-1 font-mono text-xs text-brand-300">GET <span>/api/config</span></span>
+                  <span class="text-xs text-slate-400">Runtime config</span>
+                </div>
+                <p class="mt-3 text-slate-300">Reports the events file path, how it was resolved (<em>env</em>, <em>.env</em>, <em>default</em>), and other runtime hints.</p>
+                <pre class="mt-3 rounded-xl bg-slate-950/60 p-3 text-xs text-slate-200"><code>{
+  "events_file": "/tmp/cacheer-monitor.jsonl",
+  "origin": "env"
+}</code></pre>
+              </article>
+
+              <article class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 text-sm">
+                <div class="flex items-center justify-between">
+                  <span class="inline-flex items-center gap-2 rounded-full bg-slate-800 px-3 py-1 font-mono text-xs text-brand-300">GET <span>/api/metrics</span></span>
+                  <span class="text-xs text-slate-400">Aggregated stats</span>
+                </div>
+                <p class="mt-3 text-slate-300">Summarises all events into counters, hit-rate, and latency percentiles.</p>
+                <dl class="mt-3 space-y-1 text-xs text-slate-400">
+                  <div class="flex justify-between"><dt>Query</dt><dd><code class="font-mono text-brand-300">namespace</code> (optional)</dd></div>
+                  <div class="flex justify-between"><dt>Default limit</dt><dd>500 recent entries</dd></div>
+                </dl>
+                <pre class="mt-3 rounded-xl bg-slate-950/60 p-3 text-xs text-slate-200 overflow-auto"><code>{
+  "hits": 1200,
+  "misses": 45,
+  "hit_rate": 0.963,
+  "latency": { "avg_ms": 3.1, "p95_ms": 7.8, "p99_ms": 15.2 },
+  "drivers": { "redis": 1090, "array": 155 },
+  "namespaces": { "default": 800, "critical": 290 },
+  "top_keys": { "users:42": 120, "orders:recent": 56 }
+}</code></pre>
+              </article>
+
+              <article class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 text-sm">
+                <div class="flex items-center justify-between">
+                  <span class="inline-flex items-center gap-2 rounded-full bg-slate-800 px-3 py-1 font-mono text-xs text-brand-300">GET <span>/api/events</span></span>
+                  <span class="text-xs text-slate-400">Event log</span>
+                </div>
+                <p class="mt-3 text-slate-300">Returns the newest events first. Filter by namespace, type, or match portions of the cache key.</p>
+                <dl class="mt-3 space-y-1 text-xs text-slate-400">
+                  <div class="flex justify-between"><dt>Query</dt><dd><code class="font-mono text-brand-300">limit</code> (default 200), <code class="font-mono text-brand-300">namespace</code> (optional)</dd></div>
+                </dl>
+                <pre class="mt-3 rounded-xl bg-slate-950/60 p-3 text-xs text-slate-200 overflow-auto"><code>{
+  "type": "put",
+  "ts": 1714310556,
+  "payload": {
+    "key": "users:42",
+    "namespace": "default",
+    "driver": "redis",
+    "ttl": 300,
+    "duration_ms": 5.4
+  }
+}</code></pre>
+              </article>
+
+              <article class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 text-sm md:col-span-2">
+                <div class="flex items-center justify-between">
+                  <span class="inline-flex items-center gap-2 rounded-full bg-rose-900/40 px-3 py-1 font-mono text-xs text-rose-200">POST <span>/api/events/clear</span></span>
+                  <span class="text-xs text-rose-200/80">Destructive</span>
+                </div>
+                <p class="mt-3 text-slate-300">Rotates the events file: current file is archived with a timestamp suffix and a fresh empty file is created. The dashboard “Clear” button uses this endpoint.</p>
+                <p class="mt-2 text-xs text-slate-400">Use only in local/dev environments. Returns <code class="font-mono text-brand-300">{ "ok": true, "rotated_to": "..." }</code>.</p>
+              </article>
+            </div>
+          </div>
+
+          <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-sm">
+            <h3 class="text-lg font-semibold text-slate-100">Server-Sent Events</h3>
+            <div class="mt-2 flex flex-wrap items-center gap-3">
+              <span class="inline-flex items-center gap-2 rounded-full bg-slate-800 px-3 py-1 font-mono text-xs text-brand-300">GET <span>/api/events/stream</span></span>
+              <span class="text-xs text-slate-400">Realtime ping channel</span>
+            </div>
+            <p class="mt-3 text-slate-300">Provides a lightweight heartbeat used by the SPA to refresh the event list as new lines land in the JSONL file. Messages are simple <code class="font-mono text-brand-300">data: ping</code> payloads.</p>
+            <p class="mt-3 text-slate-400">When EventSource is not available, the dashboard falls back to interval polling using the configured refresh rate.</p>
+          </div>
+        </section>
+
+        <section id="cli" class="space-y-6">
+          <div class="space-y-3">
+            <h2 class="text-2xl font-semibold text-slate-50">CLI Reference</h2>
+            <p class="text-slate-300">Helper commands live in <code class="font-mono text-brand-300">bin/cacheer-monitor</code>.</p>
+          </div>
+          <div class="grid gap-5 md:grid-cols-2">
+            <article class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-sm">
+              <h3 class="text-base font-semibold text-slate-100">serve</h3>
+              <p class="mt-2 text-slate-300">Starts the HTTP API + SPA assets using PHP&apos;s built-in server.</p>
+              <dl class="mt-4 space-y-2 text-xs text-slate-400">
+                <div class="flex justify-between"><dt>--host</dt><dd>Default <code class="font-mono text-brand-300">127.0.0.1</code></dd></div>
+                <div class="flex justify-between"><dt>--port</dt><dd>Default <code class="font-mono text-brand-300">9966</code></dd></div>
+                <div class="flex justify-between"><dt>--quiet</dt><dd>Suppress request logging</dd></div>
+              </dl>
+              <pre class="mt-4 rounded-xl bg-slate-950/60 p-4 text-xs text-slate-200"><code>$ php bin/cacheer-monitor serve --host=0.0.0.0 --port=9000 --quiet</code></pre>
+            </article>
+
+            <article class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-sm">
+              <h3 class="text-base font-semibold text-slate-100">reporters &amp; scripts</h3>
+              <p class="mt-2 text-slate-300">Run bundled demos to exercise Cacheer adapters and produce realistic traffic.</p>
+              <ul class="mt-3 space-y-2 text-xs text-slate-400">
+                <li><code class="font-mono text-brand-300">php Tests/scenarios.php</code> — baseline traffic mix.</li>
+                <li><code class="font-mono text-brand-300">php Tests/scenarios_advanced.php</code> — bursty load, tag flushing, error events.</li>
+                <li><code class="font-mono text-brand-300">php Tests/metrics_test.php</code> — quick regression check for metrics aggregation.</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section id="config" class="space-y-6">
+          <div class="space-y-3">
+            <h2 class="text-2xl font-semibold text-slate-50">Configuration &amp; Environment</h2>
+            <p class="text-slate-300">The monitor favours convention, yet a few knobs keep it flexible during development.</p>
+          </div>
+          <div class="grid gap-5 md:grid-cols-2">
+            <article class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-sm">
+              <h3 class="text-base font-semibold text-slate-100">Events file resolution</h3>
+              <ol class="mt-3 list-decimal space-y-2 pl-5 text-slate-300">
+                <li><span class="text-slate-200">OS environment</span>: <code class="font-mono text-brand-300">CACHEER_MONITOR_EVENTS</code>.</li>
+                <li><span class="text-slate-200">.env file</span>: read from project root (see <code class="font-mono text-brand-300">src/Support/Env.php</code>).</li>
+                <li><span class="text-slate-200">Fallback</span>: <code class="font-mono text-brand-300">sys_get_temp_dir()/cacheer-monitor.jsonl</code>.</li>
+              </ol>
+              <p class="mt-3 text-xs text-slate-400">Relative paths are resolved against the repository root.</p>
+            </article>
+
+            <article class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-sm">
+              <h3 class="text-base font-semibold text-slate-100">Refreshing data</h3>
+              <ul class="mt-3 space-y-2 text-slate-300">
+                <li>The UI refresh interval defaults to 5&nbsp;s (adjust via the select in the header).</li>
+                <li>Manual refresh is available using the dashboard “Refresh” button.</li>
+                <li>Events stream uses SSE ping fallbacks when supported.</li>
+                <li>Large files: consider pruning via <code class="font-mono text-brand-300">POST /api/events/clear</code> after archiving.</li>
+              </ul>
+            </article>
+          </div>
+
+          <article class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-sm">
+            <h3 class="text-base font-semibold text-slate-100">Event payload format</h3>
+            <p class="mt-2 text-slate-300">Each line in the JSONL file is a single Cacheer event:</p>
+            <pre class="mt-3 rounded-xl bg-slate-950/60 p-4 text-xs text-slate-200 overflow-auto"><code>{
+  "type": "hit",
+  "ts": 1714310556,
+  "payload": {
+    "key": "users:42",
+    "namespace": "default",
+    "driver": "redis",
+    "size_bytes": 2048,
+    "duration_ms": 1.9,
+    "tags": ["groupA", "beta-testers"]
+  }
+}</code></pre>
+            <p class="mt-3 text-xs text-slate-400">Additional fields (e.g., <code class="font-mono text-brand-300">ttl</code>, <code class="font-mono text-brand-300">exception</code>) appear depending on the event type.</p>
+          </article>
+        </section>
+
+        <section id="workflows" class="space-y-6">
+          <div class="space-y-3">
+            <h2 class="text-2xl font-semibold text-slate-50">Common Workflows</h2>
+            <p class="text-slate-300">Practical recipes for daily debugging or demos.</p>
+          </div>
+          <div class="grid gap-5 md:grid-cols-2">
+            <article class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-sm">
+              <h3 class="text-base font-semibold text-slate-100">Reset the playground</h3>
+              <ol class="mt-3 list-decimal space-y-2 pl-5 text-slate-300">
+                <li>Run <code class="font-mono text-brand-300">POST /api/events/clear</code> (or click “Clear”).</li>
+                <li>Replay <code class="font-mono text-brand-300">Tests/scenarios.php</code>.</li>
+                <li>Open the dashboard; set refresh to <span class="font-mono text-brand-300">1s</span> for live demos.</li>
+              </ol>
+            </article>
+
+            <article class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-sm">
+              <h3 class="text-base font-semibold text-slate-100">Investigate a slow key</h3>
+              <ul class="mt-3 space-y-2 text-slate-300">
+                <li>Filter events by key fragment using the “filter key” input.</li>
+                <li>Inspect latency badges in the event timeline.</li>
+                <li>Cross-check namespaces and drivers to spot anomalies.</li>
+              </ul>
+            </article>
+
+            <article class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-sm">
+              <h3 class="text-base font-semibold text-slate-100">Compare namespaces</h3>
+              <p class="mt-2 text-slate-300">Use the namespace filter to isolate traffic and export screenshots for reports. Pair with the donut + cards to quantify volume.</p>
+            </article>
+
+            <article class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-sm">
+              <h3 class="text-base font-semibold text-slate-100">Automate reporting</h3>
+              <p class="mt-2 text-slate-300">Hit the metrics endpoint from CI to capture regression budgets, or pipe JSONL snapshots into analytics pipelines for longer-term comparisons.</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="troubleshooting" class="space-y-6">
+          <div class="space-y-3">
+            <h2 class="text-2xl font-semibold text-slate-50">Troubleshooting</h2>
+            <p class="text-slate-300">When the dashboard looks empty, check these first:</p>
+          </div>
+          <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-sm">
+            <ul class="space-y-3 text-slate-300">
+              <li><span class="text-slate-200">Events file path</span>: verify via <code class="font-mono text-brand-300">GET /api/config</code> and ensure the file exists.</li>
+              <li><span class="text-slate-200">File permissions</span>: the PHP process must read &amp; write the JSONL file.</li>
+              <li><span class="text-slate-200">Large logs</span>: rotate with the clear endpoint if the UI becomes sluggish.</li>
+              <li><span class="text-slate-200">PHP version</span>: requires 8.1+ with JSON extension enabled.</li>
+              <li><span class="text-slate-200">Browser caching</span>: hard-refresh after updating assets.</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="space-y-4 text-sm text-slate-400">
+          <h2 class="text-lg font-semibold text-slate-100">Further Reading</h2>
+          <ul class="space-y-2">
+            <li>Source references: <code class="font-mono text-brand-300">src/Http/ApiController.php</code>, <code class="font-mono text-brand-300">src/Reporter/JsonlReporter.php</code>.</li>
+            <li>Tests worth exploring: <code class="font-mono text-brand-300">Tests/cacheer_integration_test.php</code>, <code class="font-mono text-brand-300">Tests/cache_adv/_tags/groupB.json</code>.</li>
+            <li>Issue template: capture reproduction using <code class="font-mono text-brand-300">Tests/scenarios.php</code> output + API payloads.</li>
+          </ul>
+        </section>
+      </main>
+
+      <footer class="border-t border-slate-800/60 bg-slate-950/80 py-6 text-center text-xs text-slate-500">
+        Cacheer Monitor &mdash; crafted for local debugging &amp; demos. Built with PHP + Tailwind.
+      </footer>
+    </div>
   </body>
-  </html>
-
+</html>
