@@ -1,9 +1,10 @@
 <!doctype html>
-<html lang="en" class="h-full">
+<html lang="en" class="h-full dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Cacheer Monitor</title>
+    <script src="./assets/js/tailwind-config.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" referrerpolicy="no-referrer" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -29,7 +30,7 @@
               <option value="5000" selected>5s</option>
               <option value="10000">10s</option>
             </select>
-            <a href="./docs/index.html" class="hidden md:inline-flex items-center gap-1 px-5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs" title="Open API docs">
+            <a href="./docs/index.html" class="hidden md:inline-flex items-center gap-1 px-5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs" title="Open API docs" target="_blank" rel="noopener">
               <i class="fa-regular fa-circle-question"></i> Docs
             </a>
             <button id="btnRefresh" class="px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs">
