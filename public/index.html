@@ -106,52 +106,7 @@
             <div class="text-[11px] text-slate-500 mt-0.5">p95: <span id="lat_p95">—</span> · p99: <span id="lat_p99">—</span></div>
           </div>
         </section>
-        <!-- Two Columns: Drivers + Top Keys -->
-        <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-            <div class="flex items-center justify-between mb-2">
-              <h3 class="font-semibold text-sm"><i class="fa-solid fa-server text-slate-500 mr-2"></i>Drivers</h3>
-              <span class="text-xs text-slate-500" id="totalEvents">events: 0</span>
-            </div>
-            <canvas id="driversChart" height="170" class="mb-3 w-full max-w-full"></canvas>
-            <div id="driversList" class="space-y-2"></div>
-          </div>
-          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-            <div class="flex items-center justify-between mb-2">
-              <h3 class="font-semibold text-sm"><i class="fa-solid fa-key text-slate-500 mr-2"></i>Top Keys</h3>
-              <div class="flex items-center gap-2">
-                <input id="filterKey" placeholder="filter key..." class="px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"/>
-                <button id="clearFilter" class="px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700">clear</button>
-              </div>
-            </div>
-            <table class="w-full text-sm">
-              <thead class="text-xs text-slate-500">
-                <tr><th class="text-left py-1">Key</th><th class="text-right py-1">Count</th></tr>
-              </thead>
-              <tbody id="topKeysBody"></tbody>
-            </table>
-          </div>
-      </section>
-        <!-- Namespaces -->
-        <section class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-          <div class="flex items-center justify-between mb-2">
-            <h3 class="font-semibold text-sm"><i class="fa-regular fa-folder-open text-slate-500 mr-2"></i>Namespaces</h3>
-          </div>
-          <div id="namespacesList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2"></div>
-        </section>
-
-        <!-- Timeline Charts -->
-        <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-            <h3 class="font-semibold text-sm mb-2"><i class="fa-solid fa-chart-line text-slate-500 mr-2"></i>Hits vs Misses (last 10 min)</h3>
-            <canvas id="chartHitsMisses" height="180" class="w-full max-w-full"></canvas>
-          </div>
-          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-            <h3 class="font-semibold text-sm mb-2"><i class="fa-solid fa-wave-square text-slate-500 mr-2"></i>Latency (avg ms, last 10 min)</h3>
-            <canvas id="chartLatency" height="180" class="w-full max-w-full"></canvas>
-          </div>
-        </section>
-        <!-- Events Stream -->
+        <!-- Recent Events -->
         <section class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
           <div class="flex items-center justify-between mb-2">
             <h3 class="font-semibold text-sm"><i class="fa-regular fa-list-alt text-slate-500 mr-2"></i>Recent Events</h3>
@@ -175,6 +130,69 @@
             </div>
           </div>
           <div id="events" class="space-y-1 max-h-[420px] overflow-auto pr-1"></div>
+        </section>
+        <!-- Deep-dive sections -->
+        <section class="space-y-3">
+          <details class="group rounded-lg border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800/80 p-4 shadow-sm [&>summary::-webkit-details-marker]:hidden">
+            <summary class="flex cursor-pointer items-center justify-between text-sm font-semibold text-slate-700 dark:text-slate-200">
+              <span class="flex items-center gap-2"><i class="fa-solid fa-layer-group text-slate-500"></i> Drivers &amp; Top Keys</span>
+              <span class="text-xs text-slate-500 transition-transform group-open:-rotate-180"><i class="fa-solid fa-chevron-down"></i></span>
+            </summary>
+            <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/40">
+                <div class="flex items-center justify-between mb-2">
+                  <h3 class="font-semibold text-sm"><i class="fa-solid fa-server text-slate-500 mr-2"></i>Drivers</h3>
+                  <span class="text-xs text-slate-500" id="totalEvents">events: 0</span>
+                </div>
+                <canvas id="driversChart" height="170" class="mb-3 w-full max-w-full"></canvas>
+                <div id="driversList" class="space-y-2"></div>
+              </div>
+              <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/40">
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-2">
+                  <h3 class="font-semibold text-sm"><i class="fa-solid fa-key text-slate-500 mr-2"></i>Top Keys</h3>
+                  <div class="flex items-center gap-2">
+                    <input id="filterKey" placeholder="filter key..." class="px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"/>
+                    <button id="clearFilter" class="px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700">clear</button>
+                  </div>
+                </div>
+                <div class="max-h-64 overflow-auto">
+                  <table class="w-full text-sm">
+                    <thead class="text-xs text-slate-500">
+                      <tr><th class="text-left py-1">Key</th><th class="text-right py-1">Count</th></tr>
+                    </thead>
+                    <tbody id="topKeysBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <details class="group rounded-lg border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800/80 p-4 shadow-sm [&>summary::-webkit-details-marker]:hidden">
+            <summary class="flex cursor-pointer items-center justify-between text-sm font-semibold text-slate-700 dark:text-slate-200">
+              <span class="flex items-center gap-2"><i class="fa-regular fa-folder-open text-slate-500"></i> Namespaces</span>
+              <span class="text-xs text-slate-500 transition-transform group-open:-rotate-180"><i class="fa-solid fa-chevron-down"></i></span>
+            </summary>
+            <div class="mt-4">
+              <div id="namespacesList" class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3"></div>
+            </div>
+          </details>
+
+          <details class="group rounded-lg border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800/80 p-4 shadow-sm [&>summary::-webkit-details-marker]:hidden">
+            <summary class="flex cursor-pointer items-center justify-between text-sm font-semibold text-slate-700 dark:text-slate-200">
+              <span class="flex items-center gap-2"><i class="fa-solid fa-chart-line text-slate-500"></i> Timeline Insights</span>
+              <span class="text-xs text-slate-500 transition-transform group-open:-rotate-180"><i class="fa-solid fa-chevron-down"></i></span>
+            </summary>
+            <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/40">
+                <h3 class="font-semibold text-sm mb-2"><i class="fa-solid fa-chart-line text-slate-500 mr-2"></i>Hits vs Misses (last 10 min)</h3>
+                <canvas id="chartHitsMisses" height="180" class="w-full max-w-full"></canvas>
+              </div>
+              <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/40">
+                <h3 class="font-semibold text-sm mb-2"><i class="fa-solid fa-wave-square text-slate-500 mr-2"></i>Latency (avg ms, last 10 min)</h3>
+                <canvas id="chartLatency" height="180" class="w-full max-w-full"></canvas>
+              </div>
+            </div>
+          </details>
         </section>
       </main>
     </div>
