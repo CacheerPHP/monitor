@@ -107,9 +107,15 @@ final class Aggregator
             sort($latencySamples);
             $sampleCount = count($latencySamples);
             $average = array_sum($latencySamples) / $sampleCount;
-            $percentileAt = function(float $quantile) use ($latencySamples, $sampleCount): float {
-                $index = (int) floor(($sampleCount - 1) * $quantile);
-                return $latencySamples[$index] ?? 0.0;
+            $percentileAt = function (float $quantile) use ($latencySamples, $sampleCount): float {
+                $pos = ($sampleCount - 1) * $quantile;
+                $lower = (int) floor($pos);
+                $upper = min((int) ceil($pos), $sampleCount - 1);
+                if ($lower === $upper) {
+                    return $latencySamples[$lower];
+                }
+                $fraction = $pos - $lower;
+                return $latencySamples[$lower] * (1 - $fraction) + $latencySamples[$upper] * $fraction;
             };
             $stats['latency'] = [
                 'avg_ms' => round($average, 2),

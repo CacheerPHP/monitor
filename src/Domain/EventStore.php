@@ -33,9 +33,11 @@ final class EventStore
             if (!is_array($decoded)) {
                 continue;
             }
-            if ($namespace !== null && $namespace !== '') {
+            if ($namespace !== null) {
                 $recordNamespace = $decoded['payload']['namespace'] ?? '';
-                if ($recordNamespace !== $namespace) {
+                // Normalize: '(default)' matches empty namespace in events
+                $normalizedFilter = ($namespace === '(default)') ? '' : $namespace;
+                if ($recordNamespace !== $normalizedFilter) {
                     continue;
                 }
             }
@@ -52,13 +54,15 @@ final class EventStore
     public function clear(): bool
     {
         if (!is_file($this->filePath)) {
-            return (bool) @touch($this->filePath);
+            return @touch($this->filePath);
         }
         $rotated = @rename($this->filePath, $this->filePath . '.' . date('Ymd_His') . '.bak');
         if (!$rotated) {
-            return (bool) @file_put_contents($this->filePath, '');
+            // Rotation failed — truncate in place
+            return @file_put_contents($this->filePath, '') !== false;
         }
-        return (bool) @file_put_contents($this->filePath, '');
+        // Create fresh empty file
+        return @file_put_contents($this->filePath, '') !== false;
     }
 
     /**

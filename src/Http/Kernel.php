@@ -27,7 +27,7 @@ final class Kernel
      */
     public function handle(): void
     {
-        $this->sendNoCacheHeaders();
+        $this->sendDefaultHeaders();
         $request = Request::fromGlobals();
         $response = $this->router->dispatch($request);
         $response->send();
@@ -38,10 +38,13 @@ final class Kernel
      *
      * @return void
      */
-    private function sendNoCacheHeaders(): void
+    private function sendDefaultHeaders(): void
     {
         header('Cache-Control: no-cache, no-store, must-revalidate');
         header('Pragma: no-cache');
         header('Expires: 0');
+        header('Access-Control-Allow-Origin: *');
+        header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+        header('Access-Control-Allow-Headers: Content-Type, X-Monitor-Token');
     }
 }

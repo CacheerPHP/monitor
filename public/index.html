@@ -1,122 +1,250 @@
 <!doctype html>
-<html lang="en" class="h-full dark">
+<html lang="en" class="h-full">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Cacheer Monitor</title>
-    <script src="./assets/js/tailwind-config.js"></script>
+    <script>
+      // Synchronous theme init — runs before any rendering
+      (function() {
+        var saved = null;
+        try { saved = localStorage.getItem('cacheer-theme'); } catch(e) {}
+        if (saved === 'light') {
+          document.documentElement.classList.remove('dark');
+        } else {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      // Config MUST be set after CDN loads (documented approach)
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+              mono: ['JetBrains Mono', 'Fira Code', 'ui-monospace', 'monospace'],
+            },
+          },
+        },
+      };
+    </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" referrerpolicy="no-referrer" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      /* Animated number transitions */
+      .metric-value { transition: transform 0.2s ease, opacity 0.15s ease; }
+      .metric-value.updating { transform: scale(1.08); opacity: 0.7; }
+
+      /* Smooth expand for details */
+      details .details-content { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.3s ease; }
+      details[open] .details-content { grid-template-rows: 1fr; }
+      details .details-content > div { overflow: hidden; }
+
+      /* Pulse animation for live indicator */
+      @keyframes pulse-ring { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(2.2); opacity: 0; } }
+      .status-pulse { position: relative; }
+      .status-pulse.live::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 9999px;
+        background: inherit;
+        animation: pulse-ring 1.5s ease-out infinite;
+      }
+
+      /* Skeleton loading */
+      @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+      .skeleton {
+        background: linear-gradient(90deg, transparent 25%, rgba(148,163,184,0.15) 50%, transparent 75%);
+        background-size: 200% 100%;
+        animation: shimmer 1.5s ease-in-out infinite;
+        border-radius: 0.375rem;
+      }
+
+      /* Event row hover */
+      .event-row { transition: background-color 0.15s ease; }
+      .event-row:hover { background-color: rgba(148,163,184,0.08); }
+
+      /* Card hover lift */
+      .stat-card { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+      .stat-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+      .dark .stat-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+
+      /* Scrollbar styling */
+      .custom-scroll::-webkit-scrollbar { width: 6px; }
+      .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+      .custom-scroll::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.3); border-radius: 3px; }
+      .custom-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,0.5); }
+
+      /* Theme toggle */
+      .theme-toggle { transition: transform 0.3s ease; }
+      .theme-toggle:hover { transform: rotate(30deg); }
+    </style>
   </head>
-  <body class="h-full bg-slate-50 text-slate-800 dark:bg-slate-900 dark:text-slate-100 overflow-x-hidden">
-    <div class="min-h-full">
+  <body class="h-full bg-slate-50 text-slate-800 dark:bg-slate-900 dark:text-slate-100 overflow-x-hidden transition-colors duration-300">
+    <div class="min-h-full flex flex-col">
       <!-- Top Bar -->
-      <header class="sticky top-0 z-10 bg-white/80 dark:bg-slate-800/80 backdrop-blur border-b border-slate-200 dark:border-slate-700">
-        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-col lg:flex-row items-start lg:items-center justify-between min-w-0 gap-y-2">
+      <header class="sticky top-0 z-20 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-700/80 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col lg:flex-row items-start lg:items-center justify-between min-w-0 gap-y-2">
           <div class="flex items-center gap-3 min-w-0">
-            <i class="fa-solid fa-gauge-high text-blue-600 dark:text-blue-400 text-xl"></i>
-            <h1 class="font-semibold text-lg">Cacheer Monitor</h1>
+            <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 shadow-sm">
+              <i class="fa-solid fa-gauge-high text-white text-sm"></i>
+            </div>
+            <h1 class="font-bold text-lg tracking-tight">Cacheer Monitor</h1>
             <span id="statusDot" class="ml-2 inline-flex items-center gap-2 text-xs text-slate-500">
-              <span class="w-2.5 h-2.5 rounded-full bg-slate-300" id="statusIndicator"></span>
-              <span id="lastUpdated">—</span>
+              <span class="w-2 h-2 rounded-full bg-slate-300 status-pulse" id="statusIndicator"></span>
+              <span id="lastUpdated">--</span>
             </span>
           </div>
           <div class="flex items-center gap-2 w-full lg:w-auto justify-start lg:justify-end shrink-0 flex-wrap">
-            <select id="refreshRate" class="px-2 py-1.5 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" title="Auto refresh interval (choose Off for manual)">
-              <option value="off">Off (manual)</option>
+            <select id="refreshRate" class="px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-colors" title="Auto refresh interval">
+              <option value="off">Off</option>
               <option value="1000">1s</option>
               <option value="2000">2s</option>
               <option value="5000" selected>5s</option>
               <option value="10000">10s</option>
             </select>
-            <a href="./docs/index.html" class="hidden md:inline-flex items-center gap-1 px-5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs" title="Open API docs" target="_blank" rel="noopener">
+            <button id="btnThemeToggle" class="theme-toggle w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors" title="Toggle theme">
+              <i id="themeIcon" class="fa-solid fa-moon text-xs"></i>
+            </button>
+            <a href="https://cacheerphp.github.io/doc.html?doc=resources/docs/en/cacheer-monitor/index.md" class="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-medium transition-colors" title="Open API docs" target="_blank" rel="noopener">
               <i class="fa-regular fa-circle-question"></i> Docs
             </a>
-            <button id="btnRefresh" class="px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs">
-              <i class="fa-solid fa-rotate"></i> Refresh
+            <button id="btnRefresh" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-medium shadow-sm transition-colors">
+              <i class="fa-solid fa-rotate" id="refreshIcon"></i> Refresh
             </button>
-            <button id="btnClear" class="px-3 py-1.5 rounded-md border border-rose-300 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950 text-xs">
+            <button id="btnClear" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950 text-xs font-medium transition-colors">
               <i class="fa-regular fa-trash-can"></i> Clear
             </button>
           </div>
         </div>
       </header>
-      <main class="max-w-7xl mx-auto px-4 py-6 space-y-6 min-w-0">
+
+      <main class="max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 space-y-5 min-w-0 flex-1">
         <!-- Config bar -->
-        <div class="flex flex-col md:flex-row md:items-center gap-2 text-xs min-w-0">
-          <div class="flex items-center gap-2 min-w-0">
-            <span class="text-slate-500"><i class="fa-regular fa-file-lines mr-1"></i>Events file:</span>
-            <span id="eventsFile" class="font-mono truncate max-w-full">—</span>
+        <div class="flex flex-col md:flex-row md:items-center gap-2 text-xs min-w-0 px-1">
+          <div class="flex items-center gap-2 min-w-0 text-slate-500 dark:text-slate-400">
+            <i class="fa-regular fa-file-lines"></i>
+            <span id="eventsFile" class="font-mono truncate max-w-xs lg:max-w-lg">--</span>
             <button
               id="copyPath"
-              class="hidden lg:inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-400 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-700 dark:focus:ring-slate-600"
+              class="hidden lg:inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
               title="Copy events file path"
               aria-label="Copy events file path"
             >
-              <i class="fa-regular fa-copy"></i>
-              <span class="hidden lg:inline">Copy</span>
+              <i class="fa-regular fa-copy"></i> Copy
             </button>
-            <span id="origin" class="ml-1 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">origin: —</span>
+            <span id="origin" class="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 font-medium">origin: --</span>
           </div>
           <div class="grow"></div>
-          <div>
-            <span id="since" class="text-slate-500 mr-3"><i class="fa-regular fa-clock mr-1"></i>since: —</span>
-            <label class="text-slate-500 mr-1">namespace:</label>
-            <input id="nsFilter" placeholder="namespace" class="px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 w-36"/>
+          <div class="flex items-center gap-3 text-slate-500 dark:text-slate-400">
+            <span id="since"><i class="fa-regular fa-clock mr-1"></i>since: --</span>
+            <div class="flex items-center gap-1.5">
+              <label class="text-slate-400">ns:</label>
+              <input id="nsFilter" placeholder="namespace" class="px-2.5 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 w-32 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-colors"/>
+            </div>
           </div>
         </div>
+
+        <!-- Loading overlay -->
+        <div id="loadingState" class="hidden">
+          <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <div class="skeleton h-24 rounded-xl"></div>
+            <div class="skeleton h-24 rounded-xl"></div>
+            <div class="skeleton h-24 rounded-xl"></div>
+            <div class="skeleton h-24 rounded-xl"></div>
+            <div class="skeleton h-24 rounded-xl"></div>
+          </section>
+        </div>
+
         <!-- Stats Grid -->
-        <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-            <div class="text-xs text-slate-500 flex items-center gap-2"><i class="fa-solid fa-circle-check text-emerald-500"></i> Hits</div>
-            <div id="hits" class="text-2xl font-semibold mt-1">0</div>
+        <section id="statsGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div class="stat-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-0.5 bg-emerald-500"></div>
+            <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 font-medium"><i class="fa-solid fa-circle-check text-emerald-500"></i> Hits</div>
+            <div id="hits" class="metric-value text-2xl font-bold mt-1.5 tabular-nums">0</div>
           </div>
-          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-            <div class="text-xs text-slate-500 flex items-center gap-2"><i class="fa-solid fa-circle-xmark text-rose-500"></i> Misses</div>
-            <div id="misses" class="text-2xl font-semibold mt-1">0</div>
+          <div class="stat-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-0.5 bg-rose-500"></div>
+            <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 font-medium"><i class="fa-solid fa-circle-xmark text-rose-500"></i> Misses</div>
+            <div id="misses" class="metric-value text-2xl font-bold mt-1.5 tabular-nums">0</div>
           </div>
-          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-            <div class="text-xs text-slate-500 flex items-center gap-2"><i class="fa-solid fa-bullseye text-indigo-500"></i> Hit Rate</div>
-            <div id="hit_rate" class="text-2xl font-semibold mt-1">0%</div>
+          <div class="stat-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-0.5 bg-indigo-500"></div>
+            <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 font-medium"><i class="fa-solid fa-bullseye text-indigo-500"></i> Hit Rate</div>
+            <div id="hit_rate" class="metric-value text-2xl font-bold mt-1.5 tabular-nums">0%</div>
           </div>
-          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-            <div class="text-xs text-slate-500 flex items-center gap-2"><i class="fa-solid fa-box-archive text-amber-600"></i> Puts</div>
-            <div id="puts" class="text-2xl font-semibold mt-1">0</div>
+          <div class="stat-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-0.5 bg-amber-500"></div>
+            <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 font-medium"><i class="fa-solid fa-box-archive text-amber-500"></i> Puts</div>
+            <div id="puts" class="metric-value text-2xl font-bold mt-1.5 tabular-nums">0</div>
           </div>
-          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-            <div class="text-xs text-slate-500 flex items-center gap-2"><i class="fa-solid fa-broom text-sky-600"></i> Flushes</div>
-            <div id="flushes" class="text-2xl font-semibold mt-1">0</div>
+          <div class="stat-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-0.5 bg-sky-500"></div>
+            <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 font-medium"><i class="fa-solid fa-broom text-sky-500"></i> Flushes</div>
+            <div id="flushes" class="metric-value text-2xl font-bold mt-1.5 tabular-nums">0</div>
           </div>
-          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-            <div class="text-xs text-slate-500 flex items-center gap-2"><i class="fa-solid fa-arrows-rotate text-teal-600"></i> Renews</div>
-            <div id="renews" class="text-2xl font-semibold mt-1">0</div>
+          <div class="stat-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-0.5 bg-teal-500"></div>
+            <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 font-medium"><i class="fa-solid fa-arrows-rotate text-teal-500"></i> Renews</div>
+            <div id="renews" class="metric-value text-2xl font-bold mt-1.5 tabular-nums">0</div>
           </div>
-          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-            <div class="text-xs text-slate-500 flex items-center gap-2"><i class="fa-solid fa-trash-can text-fuchsia-600"></i> Clears</div>
-            <div id="clears" class="text-2xl font-semibold mt-1">0</div>
+          <div class="stat-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-0.5 bg-fuchsia-500"></div>
+            <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 font-medium"><i class="fa-solid fa-trash-can text-fuchsia-500"></i> Clears</div>
+            <div id="clears" class="metric-value text-2xl font-bold mt-1.5 tabular-nums">0</div>
           </div>
-          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-            <div class="text-xs text-slate-500 flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation text-rose-600"></i> Errors</div>
-            <div id="errors" class="text-2xl font-semibold mt-1">0</div>
+          <div class="stat-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-0.5 bg-rose-600"></div>
+            <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 font-medium"><i class="fa-solid fa-triangle-exclamation text-rose-600"></i> Errors</div>
+            <div id="errors" class="metric-value text-2xl font-bold mt-1.5 tabular-nums">0</div>
           </div>
-          <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-            <div class="text-xs text-slate-500 flex items-center gap-2"><i class="fa-regular fa-clock text-slate-500"></i> Avg Latency</div>
-            <div id="lat_avg" class="text-2xl font-semibold mt-1">—</div>
-            <div class="text-[11px] text-slate-500 mt-0.5">p95: <span id="lat_p95">—</span> · p99: <span id="lat_p99">—</span></div>
+          <div class="stat-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-0.5 bg-violet-500"></div>
+            <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 font-medium"><i class="fa-regular fa-clock text-violet-500"></i> Avg Latency</div>
+            <div id="lat_avg" class="metric-value text-2xl font-bold mt-1.5 tabular-nums">--</div>
+            <div class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 tabular-nums">p95: <span id="lat_p95">--</span> &middot; p99: <span id="lat_p99">--</span></div>
           </div>
         </section>
+
+        <!-- Timeline Insights (open by default - most useful) -->
+        <section class="space-y-3">
+          <details open class="group rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 shadow-sm overflow-hidden">
+            <summary class="flex cursor-pointer items-center justify-between text-sm font-semibold text-slate-700 dark:text-slate-200 px-5 py-3.5 select-none hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors [&::-webkit-details-marker]:hidden">
+              <span class="flex items-center gap-2"><i class="fa-solid fa-chart-line text-indigo-500"></i> Timeline Insights</span>
+              <span class="text-slate-400 transition-transform duration-200 group-open:rotate-180"><i class="fa-solid fa-chevron-down text-xs"></i></span>
+            </summary>
+            <div class="details-content">
+              <div>
+                <div class="px-5 pb-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div class="p-4 rounded-xl border border-slate-100 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-900/40">
+                    <h3 class="font-semibold text-sm mb-3 text-slate-600 dark:text-slate-300"><i class="fa-solid fa-chart-area text-emerald-500 mr-2"></i>Hits vs Misses <span class="text-[11px] font-normal text-slate-400">(last 10 min)</span></h3>
+                    <canvas id="chartHitsMisses" height="180" class="w-full max-w-full"></canvas>
+                  </div>
+                  <div class="p-4 rounded-xl border border-slate-100 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-900/40">
+                    <h3 class="font-semibold text-sm mb-3 text-slate-600 dark:text-slate-300"><i class="fa-solid fa-wave-square text-violet-500 mr-2"></i>Latency <span class="text-[11px] font-normal text-slate-400">(avg ms, last 10 min)</span></h3>
+                    <canvas id="chartLatency" height="180" class="w-full max-w-full"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </details>
+        </section>
+
         <!-- Recent Events -->
-        <section class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-          <div class="flex items-center justify-between mb-2">
-            <h3 class="font-semibold text-sm"><i class="fa-regular fa-list-alt text-slate-500 mr-2"></i>Recent Events</h3>
+        <section class="rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 shadow-sm overflow-hidden">
+          <div class="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 dark:border-slate-700/60">
+            <h3 class="font-semibold text-sm flex items-center gap-2"><i class="fa-solid fa-list-ul text-blue-500"></i> Recent Events</h3>
             <div class="flex items-center gap-2 text-xs">
-              <select id="eventLimit" class="px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+              <select id="eventLimit" class="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500/30 outline-none transition-colors">
                 <option>50</option>
                 <option selected>200</option>
                 <option>500</option>
               </select>
-              <select id="typeFilter" class="px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+              <select id="typeFilter" class="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500/30 outline-none transition-colors">
                 <option value="">all types</option>
                 <option>hit</option>
                 <option>miss</option>
@@ -129,78 +257,87 @@
               </select>
             </div>
           </div>
-          <div id="events" class="space-y-1 max-h-[420px] overflow-auto pr-1"></div>
+          <div id="events" class="custom-scroll max-h-[480px] overflow-auto">
+            <div id="eventsEmpty" class="flex flex-col items-center justify-center py-12 text-slate-400 dark:text-slate-500">
+              <i class="fa-regular fa-clock text-3xl mb-3"></i>
+              <p class="text-sm font-medium">No events yet</p>
+              <p class="text-xs mt-1">Events will appear here as they stream in</p>
+            </div>
+          </div>
         </section>
+
         <!-- Deep-dive sections -->
         <section class="space-y-3">
-          <details class="group rounded-lg border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800/80 p-4 shadow-sm [&>summary::-webkit-details-marker]:hidden">
-            <summary class="flex cursor-pointer items-center justify-between text-sm font-semibold text-slate-700 dark:text-slate-200">
-              <span class="flex items-center gap-2"><i class="fa-solid fa-layer-group text-slate-500"></i> Drivers &amp; Top Keys</span>
-              <span class="text-xs text-slate-500 transition-transform group-open:-rotate-180"><i class="fa-solid fa-chevron-down"></i></span>
+          <details class="group rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 shadow-sm overflow-hidden">
+            <summary class="flex cursor-pointer items-center justify-between text-sm font-semibold text-slate-700 dark:text-slate-200 px-5 py-3.5 select-none hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors [&::-webkit-details-marker]:hidden">
+              <span class="flex items-center gap-2"><i class="fa-solid fa-layer-group text-amber-500"></i> Drivers &amp; Top Keys</span>
+              <span class="text-slate-400 transition-transform duration-200 group-open:rotate-180"><i class="fa-solid fa-chevron-down text-xs"></i></span>
             </summary>
-            <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/40">
-                <div class="flex items-center justify-between mb-2">
-                  <h3 class="font-semibold text-sm"><i class="fa-solid fa-server text-slate-500 mr-2"></i>Drivers</h3>
-                  <span class="text-xs text-slate-500" id="totalEvents">events: 0</span>
-                </div>
-                <canvas id="driversChart" height="170" class="mb-3 w-full max-w-full"></canvas>
-                <div id="driversList" class="space-y-2"></div>
-              </div>
-              <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/40">
-                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-2">
-                  <h3 class="font-semibold text-sm"><i class="fa-solid fa-key text-slate-500 mr-2"></i>Top Keys</h3>
-                  <div class="flex items-center gap-2">
-                    <input id="filterKey" placeholder="filter key..." class="px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"/>
-                    <button id="clearFilter" class="px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700">clear</button>
+            <div class="details-content">
+              <div>
+                <div class="px-5 pb-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div class="p-4 rounded-xl border border-slate-100 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-900/40">
+                    <div class="flex items-center justify-between mb-3">
+                      <h3 class="font-semibold text-sm text-slate-600 dark:text-slate-300"><i class="fa-solid fa-server text-sky-500 mr-2"></i>Drivers</h3>
+                      <span class="text-xs text-slate-400 tabular-nums" id="totalEvents">0 events</span>
+                    </div>
+                    <canvas id="driversChart" height="170" class="mb-3 w-full max-w-full"></canvas>
+                    <div id="driversList" class="space-y-2.5"></div>
+                  </div>
+                  <div class="p-4 rounded-xl border border-slate-100 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-900/40">
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
+                      <h3 class="font-semibold text-sm text-slate-600 dark:text-slate-300"><i class="fa-solid fa-key text-amber-500 mr-2"></i>Top Keys</h3>
+                      <div class="flex items-center gap-2">
+                        <input id="filterKey" placeholder="filter key..." class="px-2.5 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-blue-500/30 outline-none transition-colors"/>
+                        <button id="clearFilter" class="px-2.5 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 font-medium transition-colors">clear</button>
+                      </div>
+                    </div>
+                    <div class="max-h-64 overflow-auto custom-scroll">
+                      <table class="w-full text-sm">
+                        <thead class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                          <tr><th class="text-left py-2 font-medium">Key</th><th class="text-right py-2 font-medium">Count</th></tr>
+                        </thead>
+                        <tbody id="topKeysBody"></tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
-                <div class="max-h-64 overflow-auto">
-                  <table class="w-full text-sm">
-                    <thead class="text-xs text-slate-500">
-                      <tr><th class="text-left py-1">Key</th><th class="text-right py-1">Count</th></tr>
-                    </thead>
-                    <tbody id="topKeysBody"></tbody>
-                  </table>
+              </div>
+            </div>
+          </details>
+
+          <details class="group rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 shadow-sm overflow-hidden">
+            <summary class="flex cursor-pointer items-center justify-between text-sm font-semibold text-slate-700 dark:text-slate-200 px-5 py-3.5 select-none hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors [&::-webkit-details-marker]:hidden">
+              <span class="flex items-center gap-2"><i class="fa-regular fa-folder-open text-teal-500"></i> Namespaces</span>
+              <span class="text-slate-400 transition-transform duration-200 group-open:rotate-180"><i class="fa-solid fa-chevron-down text-xs"></i></span>
+            </summary>
+            <div class="details-content">
+              <div>
+                <div class="px-5 pb-5">
+                  <div id="namespacesList" class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3"></div>
                 </div>
-              </div>
-            </div>
-          </details>
-
-          <details class="group rounded-lg border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800/80 p-4 shadow-sm [&>summary::-webkit-details-marker]:hidden">
-            <summary class="flex cursor-pointer items-center justify-between text-sm font-semibold text-slate-700 dark:text-slate-200">
-              <span class="flex items-center gap-2"><i class="fa-regular fa-folder-open text-slate-500"></i> Namespaces</span>
-              <span class="text-xs text-slate-500 transition-transform group-open:-rotate-180"><i class="fa-solid fa-chevron-down"></i></span>
-            </summary>
-            <div class="mt-4">
-              <div id="namespacesList" class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3"></div>
-            </div>
-          </details>
-
-          <details class="group rounded-lg border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800/80 p-4 shadow-sm [&>summary::-webkit-details-marker]:hidden">
-            <summary class="flex cursor-pointer items-center justify-between text-sm font-semibold text-slate-700 dark:text-slate-200">
-              <span class="flex items-center gap-2"><i class="fa-solid fa-chart-line text-slate-500"></i> Timeline Insights</span>
-              <span class="text-xs text-slate-500 transition-transform group-open:-rotate-180"><i class="fa-solid fa-chevron-down"></i></span>
-            </summary>
-            <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/40">
-                <h3 class="font-semibold text-sm mb-2"><i class="fa-solid fa-chart-line text-slate-500 mr-2"></i>Hits vs Misses (last 10 min)</h3>
-                <canvas id="chartHitsMisses" height="180" class="w-full max-w-full"></canvas>
-              </div>
-              <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/40">
-                <h3 class="font-semibold text-sm mb-2"><i class="fa-solid fa-wave-square text-slate-500 mr-2"></i>Latency (avg ms, last 10 min)</h3>
-                <canvas id="chartLatency" height="180" class="w-full max-w-full"></canvas>
               </div>
             </div>
           </details>
         </section>
       </main>
+
+      <!-- Footer -->
+      <footer class="border-t border-slate-200 dark:border-slate-700/60 mt-auto">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
+          <span>Cacheer Monitor</span>
+          <span>Powered by <a href="https://github.com/silviooosilva/CacheerPHP" class="hover:text-blue-500 transition-colors" target="_blank" rel="noopener">CacheerPHP</a></span>
+        </div>
+      </footer>
     </div>
+
     <!-- Tailwind CDN JIT safelist for dynamic classes used in JS -->
     <div class="hidden">
       <span class="bg-emerald-500 bg-rose-500"></span>
       <span class="bg-emerald-100 text-emerald-700 bg-rose-100 text-rose-700 bg-amber-100 text-amber-700 bg-sky-100 text-sky-700 bg-teal-100 text-teal-700 bg-fuchsia-100 text-fuchsia-700 bg-indigo-100 text-indigo-700 bg-slate-100 text-slate-700"></span>
+      <span class="dark:bg-emerald-900/40 dark:text-emerald-300 dark:bg-rose-900/40 dark:text-rose-300 dark:bg-amber-900/40 dark:text-amber-300 dark:bg-sky-900/40 dark:text-sky-300 dark:bg-teal-900/40 dark:text-teal-300 dark:bg-fuchsia-900/40 dark:text-fuchsia-300 dark:bg-indigo-900/40 dark:text-indigo-300 dark:bg-slate-700/40 dark:text-slate-300"></span>
+      <span class="dark:bg-rose-900/60 dark:text-rose-200"></span>
     </div>
     <script type="module" src="./assets/js/app.js"></script>
   </body>
-  </html>
+</html>

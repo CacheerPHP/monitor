@@ -95,11 +95,11 @@ final class ApiController
         if ($request->method !== 'POST') {
             return new Response(405, ['Allow' => 'POST'], json_encode(['ok' => false, 'error' => 'Method Not Allowed']));
         }
-        // Optional token protection via CACHEER_MONITOR_TOKEN
+        // Optional token protection via CACHEER_MONITOR_TOKEN (header only)
         $requiredToken = Env::get('CACHEER_MONITOR_TOKEN');
         if ($requiredToken) {
-            $provided = $_SERVER['HTTP_X_MONITOR_TOKEN'] ?? ($_GET['token'] ?? '');
-            if (!\is_string($provided) || $provided !== $requiredToken) {
+            $provided = $_SERVER['HTTP_X_MONITOR_TOKEN'] ?? '';
+            if (!\is_string($provided) || !hash_equals((string) $requiredToken, $provided)) {
                 return new Response(401, ['Content-Type' => 'application/json'], json_encode(['ok' => false, 'error' => 'Unauthorized']));
             }
         }
@@ -116,6 +116,9 @@ final class ApiController
      */
     public function stream(Request $request): void
     {
+        $timeout = (int) (Env::get('CACHEER_MONITOR_STREAM_TIMEOUT', 30));
+        $maxChunkBytes = 1024 * 1024; // 1MB max per read
+
         @ignore_user_abort(true);
         @set_time_limit(0);
         header('Content-Type: text/event-stream');
@@ -125,14 +128,14 @@ final class ApiController
         $file = $this->resolveStore()->path();
         $lastSize = is_file($file) ? (int) filesize($file) : 0;
         $start = time();
-        while (!connection_aborted() && (time() - $start) < 30) {
+        while (!connection_aborted() && (time() - $start) < $timeout) {
             clearstatcache(true, $file);
             $currentSize = is_file($file) ? (int) filesize($file) : 0;
             if ($currentSize > $lastSize) {
                 $fh = @fopen($file, 'rb');
                 if ($fh) {
                     @fseek($fh, $lastSize);
-                    $chunk = stream_get_contents($fh) ?: '';
+                    $chunk = stream_get_contents($fh, $maxChunkBytes) ?: '';
                     @fclose($fh);
                     $lines = preg_split("/[\r\n]+/", $chunk, -1, PREG_SPLIT_NO_EMPTY) ?: [];
                     foreach ($lines as $line) {

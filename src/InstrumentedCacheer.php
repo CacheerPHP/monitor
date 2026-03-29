@@ -13,48 +13,34 @@ use Silviooosilva\CacheerPhp\Cacheer;
  */
 final class InstrumentedCacheer
 {
-    /** @var Cacheer */
-    private Cacheer $inner;
-
-    /** @var MetricsReporterInterface */
-    private MetricsReporterInterface $reporter;
-
-    /** Constructor
-     *
+    /**
      * @param Cacheer $inner The Cacheer instance to wrap
      * @param MetricsReporterInterface $reporter The reporter to log events to
      */
-    public function __construct(Cacheer $inner, MetricsReporterInterface $reporter)
-    {
-        $this->inner = $inner;
-        $this->reporter = $reporter;
-    }
+    public function __construct(
+        private Cacheer $inner,
+        private MetricsReporterInterface $reporter,
+    ) {}
 
-    /** Wrap a Cacheer instance with instrumentation.
-     *
-     * @param Cacheer $inner The Cacheer instance to wrap
-     * @param MetricsReporterInterface $reporter The reporter to log events to
-     * @return self The wrapped InstrumentedCacheer instance
+    /**
+     * Wrap a Cacheer instance with instrumentation.
      */
     public static function wrap(Cacheer $inner, MetricsReporterInterface $reporter): self
     {
         return new self($inner, $reporter);
-    }   
+    }
 
-    /** Get the inner Cacheer instance.
-     *
-     * @return Cacheer The wrapped Cacheer instance
+    /**
+     * Get the inner Cacheer instance.
      */
     public function inner(): Cacheer
     {
         return $this->inner;
     }
 
-    /** Magic method to forward calls to the inner Cacheer instance with instrumentation.
+    /**
+     * Forward calls to the inner Cacheer instance with instrumentation.
      *
-     * @param string $name The method name being called
-     * @param array $arguments The arguments passed to the method
-     * @return mixed The result of the inner method call
      * @throws \Throwable Any exception thrown by the inner method
      */
     public function __call(string $name, array $arguments): mixed
@@ -63,7 +49,7 @@ final class InstrumentedCacheer
         try {
             $result = $this->inner->{$name}(...$arguments);
             $duration = (microtime(true) - $start) * 1000.0;
-            $this->maybeReport($name, $arguments, $result, $duration, null);
+            $this->maybeReport($name, $arguments, $result, $duration);
             return $result;
         } catch (\Throwable $e) {
             $duration = (microtime(true) - $start) * 1000.0;
@@ -77,20 +63,14 @@ final class InstrumentedCacheer
         }
     }
 
-    /** Decide whether to report an event based on method and result.
-     *
-     * @param string $method The method name called
-     * @param array $args The arguments passed to the method
-     * @param mixed $result The result returned by the method
-     * @param float $durationMs Duration of the call in milliseconds
-     * @param string|null $overrideType Optional event type override
-     * @return void
+    /**
+     * Decide whether to report an event based on method and result.
      */
-    private function maybeReport(string $method, array $args, mixed $result, float $durationMs, ?string $overrideType): void
+    private function maybeReport(string $method, array $args, mixed $result, float $durationMs): void
     {
-        $type = $overrideType ?? $this->resolveEventType($method);
+        $type = $this->resolveEventType($method);
         if ($type === null) {
-            return; // skip config/utility methods
+            return;
         }
 
         $payload = [
@@ -117,7 +97,6 @@ final class InstrumentedCacheer
             $payload['size_bytes'] = $this->estimateSize($result);
         }
         if ($type === 'put' && isset($args[1])) {
-            // putCache(key, data, ...)
             $payload['size_bytes'] = $this->estimateSize($args[1]);
         }
 
@@ -132,16 +111,11 @@ final class InstrumentedCacheer
         $this->reporter->event($type, $payload);
     }
 
-
     /**
      * Resolve the event type for a given method.
-     *
-     * @param string $method The method name
-     * @return string|null The resolved event type, or null if not applicable
      */
     private function resolveEventType(string $method): ?string
     {
-        // Normalize methods to event types
         return match ($method) {
             'getCache' => $this->inner->isSuccess() ? 'hit' : 'miss',
             'getMany' => 'get_many',
@@ -158,30 +132,36 @@ final class InstrumentedCacheer
             'flushTag' => 'flush_tag',
             'remember' => 'remember',
             'rememberForever' => 'remember_forever',
+            'add' => 'add',
+            'increment' => 'increment',
+            'decrement' => 'decrement',
+            'getAndForget' => 'get_and_forget',
             default => $this->isConfigLike($method) ? null : 'call',
         };
     }
 
-    /** Check if a method is configuration-related.
-     *
-     * @param string $method The method name
-     * @return bool True if the method is configuration-related, false otherwise
+    /**
+     * Check if a method is configuration-related (not instrumented).
      */
     private function isConfigLike(string $method): bool
     {
         return in_array($method, [
-            'setConfig', 'setDriver', 'setUp', 'getOptions', 'useEncryption', 'useCompression', 'useFormatter'
+            'setConfig', 'setDriver', 'setUp', 'getOptions', 'setOption', 'setOptions',
+            'useEncryption', 'useCompression', 'useFormatter',
+            'getCacheStore', 'setCacheStore',
+            'stats', 'resetInstance', 'setInstance',
         ], true);
     }
 
-    /** Attempt to resolve the current cache driver name.
-     *
-     * @return string The driver name, or 'unknown' if it cannot be determined
+    /**
+     * Attempt to resolve the current cache driver name.
      */
     private function resolveDriver(): string
     {
         try {
-            $store = $this->inner->cacheStore ?? null;
+            $store = method_exists($this->inner, 'getCacheStore')
+                ? $this->inner->getCacheStore()
+                : null;
             if ($store === null) {
                 return 'unknown';
             }
@@ -192,10 +172,8 @@ final class InstrumentedCacheer
         }
     }
 
-    /** Estimate the size in bytes of a value by serializing it.
-     *
-     * @param mixed $value The value to estimate
-     * @return int|null The estimated size in bytes, or null if it cannot be determined
+    /**
+     * Estimate the size in bytes of a value by serializing it.
      */
     private function estimateSize(mixed $value): ?int
     {
@@ -206,4 +184,3 @@ final class InstrumentedCacheer
         }
     }
 }
-
