@@ -1,71 +1,129 @@
-# Cacheer Monitor (Draft)
+# Cacheer Monitor
 
-Dashboard e telemetria para o CacheerPHP — pacote separado e opcional.
+Real-time dashboard and telemetry for [CacheerPHP](https://github.com/cacheerphp/CacheerPHP). Instruments your cache layer automatically — no code changes required.
 
-## Instalação (no seu novo repositório)
+![PHP](https://img.shields.io/badge/PHP-8.1%2B-777BB4?style=flat-square&logo=php)
+![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
+[![CacheerPHP](https://img.shields.io/badge/CacheerPHP-%5E5.0-blue?style=flat-square)](https://github.com/cacheerphp/CacheerPHP)
 
-composer.json:
+---
 
-```
-{
-  "require": {
-    "silviooosilva/cacheer-php": "^4.7 || ^5.0",
-    "cacheerphp/monitor": "dev-main"
-  }
-}
-```
+## Requirements
 
-Estrutura deste pacote (draft):
-- Reporter JSONL para registrar eventos
-- Wrapper `InstrumentedCacheer` para instrumentar sem alterar o core
-- CLI `cacheer-monitor` para subir um servidor local e exibir o painel
+- PHP 8.1+
+- CacheerPHP `^5.0`
 
-## Uso
+---
 
-1) Configure seu Cacheer normalmente:
+## Installation
 
-```php
-use Silviooosilva\CacheerPhp\Cacheer;
-
-$cacheer = new Cacheer([
-  'cacheDir' => __DIR__ . '/cache',
-]);
-$cacheer->setDriver()->useFileDriver();
+```bash
+composer require cacheerphp/monitor
 ```
 
-2) Envolva com o wrapper instrumentado e use nas operações:
+That's it. The package self-registers via Composer's `autoload.files` — every cache operation on any `Cacheer` instance is instrumented automatically as soon as `vendor/autoload.php` is loaded. No code changes required.
 
-```php
-use Cacheer\Monitor\InstrumentedCacheer;
-use Cacheer\Monitor\Reporter\JsonlReporter;
+---
 
-$monitor = new JsonlReporter(); // opcional: caminho customizado
-$instrumented = InstrumentedCacheer::wrap($cacheer, $monitor);
+## Start the Dashboard
 
-$instrumented->putCache('user:1', ['name' => 'Alice']);
-$instrumented->getCache('user:1');
-```
-
-3) Inicie o painel:
-
-```sh
+```bash
 vendor/bin/cacheer-monitor serve --port=9966
 ```
 
-Abra http://127.0.0.1:9966
+Open [http://127.0.0.1:9966](http://127.0.0.1:9966) in your browser.
 
-Env var opcional para o arquivo de eventos: `CACHEER_MONITOR_EVENTS=/caminho/para/events.jsonl`.
+---
 
-## Notas de Integração
+## How It Works
 
-- Este draft evita acoplamento com o core usando um wrapper. Em 5.0.0, pode-se adicionar uma Telemetry API (no-op por padrão) para emitir eventos direto dos drivers/serviços mantendo opt-in.
-- O Reporter escreve em JSONL sob lock, com rotação simples. O servidor lê e agrega métricas (hits/misses, puts, flushes, top keys, etc.).
-- Por enquanto, o wrapper não altera o encadeamento de métodos de configuração. Recomendado configurar o Cacheer primeiro e só então envolvê-lo com o `InstrumentedCacheer`.
+On install, `src/Boot/bootstrap.php` is registered in Composer's autoloader. When your app loads `vendor/autoload.php`, the bootstrap runs and calls:
 
-## Roadmap
+```php
+Cacheer::addListener(new CacheerMonitorListener(new JsonlReporter()));
+```
 
-- Proxy de configuração para manter chaining (ex.: `setDriver()->useRedisDriver()` retornando o wrapper).
-- Coleta de tamanhos por driver (mais precisa) e latências por operação.
-- Filtros por namespace/driver, timeline e exportação.
-- Autenticação quando exposto fora de `127.0.0.1`.
+CacheerPHP's built-in event dispatcher fires after every cache operation (put, get, flush, increment, etc.) and the listener writes structured JSONL records to disk. The dashboard server reads those records in real time.
 
+---
+
+## Custom Events File Path
+
+By default, events are written to the path resolved in this order:
+
+1. `CACHEER_MONITOR_EVENTS` environment variable
+2. `.env` file in the project root
+3. System temp dir (`sys_get_temp_dir() . '/cacheer-monitor.jsonl'`)
+
+To use a custom path, override after `autoload.php` is loaded:
+
+```php
+use Silviooosilva\CacheerPhp\Cacheer;
+use Cacheer\Monitor\CacheerMonitorListener;
+use Cacheer\Monitor\Reporter\JsonlReporter;
+
+Cacheer::removeListeners();
+Cacheer::addListener(new CacheerMonitorListener(
+    new JsonlReporter('/var/log/myapp/cacheer-events.jsonl')
+));
+```
+
+Start the server pointing to the same file:
+
+```bash
+CACHEER_MONITOR_EVENTS=/var/log/myapp/cacheer-events.jsonl \
+  vendor/bin/cacheer-monitor serve --port=9966
+```
+
+---
+
+## Dashboard Features
+
+- **Hit / Miss rate** — real-time ratio across all operations
+- **Operation breakdown** — puts, gets, flushes, increments
+- **Top keys** — most-accessed cache keys
+- **Event stream** — live feed of recent cache events
+- **Driver & namespace view** — filter metrics by driver or namespace
+
+---
+
+## REST API
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/health` | Server health check |
+| `GET` | `/api/config` | Active configuration |
+| `GET` | `/api/metrics` | Aggregated cache metrics |
+| `GET` | `/api/events` | Paginated event log |
+| `DELETE` | `/api/events/clear` | Clear all recorded events |
+| `GET` | `/api/events/stream` | SSE stream of live events |
+
+Full API documentation: [cacheerphp.github.io](https://cacheerphp.github.io/doc.html?doc=resources/docs/en/cacheer-monitor/api.md)
+
+---
+
+## CLI Reference
+
+| Flag | Default | Description |
+|---|---|---|
+| `--port` | `9966` | Port to listen on |
+| `--host` | `127.0.0.1` | Host to bind to |
+| `--quiet` | — | Suppress request logging |
+
+---
+
+## Security Note
+
+The dashboard binds to `127.0.0.1` by default and is intended for **local development only**. Do not expose it on a public interface without adding authentication.
+
+---
+
+## Documentation
+
+Full documentation: [cacheerphp.github.io](https://cacheerphp.github.io/doc.html?doc=resources/docs/en/cacheer-monitor/index.md)
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).

@@ -13,7 +13,10 @@
   "autoload": {
     "psr-4": {
       "Cacheer\\Monitor\\": "src/"
-    }
+    },
+    "files": [
+      "src/Boot/bootstrap.php"
+    ]
   },
   "autoload-dev": {
     "psr-4": {
