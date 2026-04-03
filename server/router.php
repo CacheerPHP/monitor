@@ -12,7 +12,17 @@ if ($path !== '/' && $staticFile && str_starts_with($staticFile, realpath($publi
     return false;
 }
 
-require_once __DIR__ . '/../vendor/autoload.php';
+$autoloadCandidates = [
+    __DIR__ . '/../vendor/autoload.php',  
+    __DIR__ . '/../../../../autoload.php',
+];
+
+foreach ($autoloadCandidates as $autoload) {
+    if (file_exists($autoload)) {
+        require_once $autoload;
+        break;
+    }
+}
 
 $kernel = new Kernel($publicDir);
 $kernel->handle();
