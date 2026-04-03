@@ -98,7 +98,7 @@ CACHEER_MONITOR_EVENTS=/var/log/myapp/cacheer-events.jsonl \
 | `DELETE` | `/api/events/clear` | Clear all recorded events |
 | `GET` | `/api/events/stream` | SSE stream of live events |
 
-Full API documentation: [cacheerphp.github.io](https://cacheerphp.github.io/doc.html?doc=resources/docs/en/cacheer-monitor/api.md)
+Full API documentation: [CacheerPHP - API Reference](https://cacheerphp.com/docs/en/api/)
 
 ---
 
@@ -120,7 +120,7 @@ The dashboard binds to `127.0.0.1` by default and is intended for **local develo
 
 ## Documentation
 
-Full documentation: [cacheerphp.github.io](https://cacheerphp.github.io/doc.html?doc=resources/docs/en/cacheer-monitor/index.md)
+Full documentation: [CacheerPHP](https://cacheerphp.com/docs/en/cacheer-monitor/)
 
 ---
 
