@@ -88,7 +88,7 @@ final class ServeCommand
     }
 
     /**
-     * Resolve a path against the package root.
+     * Resolve a path against the consuming project root.
      * 
      * @param string $path
      * @return string
@@ -96,7 +96,7 @@ final class ServeCommand
     private function resolvePath(string $path): string
     {
         $isAbsolute = (bool) preg_match('#^([A-Za-z]:\\\\|/|\\\\\\\\)#', $path);
-        return $isAbsolute ? $path : ($this->packageRoot() . DIRECTORY_SEPARATOR . ltrim($path, '/\\'));
+        return $isAbsolute ? $path : (Env::root() . DIRECTORY_SEPARATOR . ltrim($path, '/\\'));
     }
 
     /**

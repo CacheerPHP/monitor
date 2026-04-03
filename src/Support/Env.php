@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cacheer\Monitor\Support;
 
+use Composer\Autoload\ClassLoader;
+
 final class Env
 {
     /** @var bool */
@@ -64,16 +66,20 @@ final class Env
      */
     public static function root(): string
     {
-       
+        $autoloadRoot = self::autoloadRoot();
+        if ($autoloadRoot !== null) {
+            return $autoloadRoot;
+        }
+
         $cwd = rtrim((string) getcwd(), DIRECTORY_SEPARATOR);
-        if (file_exists($cwd . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php')) {
+        if (self::isProjectRoot($cwd)) {
             return $cwd;
         }
 
         // Fallback: traverse upward from __DIR__ (works in standalone/dev mode).
         $dir = __DIR__;
         while ($dir !== dirname($dir)) {
-            if (file_exists($dir . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php')) {
+            if (self::isProjectRoot($dir)) {
                 return rtrim($dir, DIRECTORY_SEPARATOR);
             }
             $dir = dirname($dir);
@@ -81,5 +87,73 @@ final class Env
 
         return $cwd;
     }
-}
 
+    /**
+     * Resolve the consuming app root from the active Composer autoloader.
+     *
+     * @return string|null
+     */
+    private static function autoloadRoot(): ?string
+    {
+        $explicitAutoload = getenv('CACHEER_AUTOLOAD');
+        if (is_string($explicitAutoload) && $explicitAutoload !== '') {
+            $root = self::projectRootFromAutoloadPath($explicitAutoload);
+            if ($root !== null) {
+                return $root;
+            }
+        }
+
+        if (class_exists(\Composer\Autoload\ClassLoader::class)) {
+            foreach (ClassLoader::getRegisteredLoaders() as $vendorDir => $_loader) {
+                if (!is_string($vendorDir)) {
+                    continue;
+                }
+
+                $root = self::projectRootFromVendorDir($vendorDir);
+                if ($root !== null) {
+                    return $root;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param string $path
+     * @return string|null
+     */
+    private static function projectRootFromAutoloadPath(string $path): ?string
+    {
+        $normalized = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path);
+        if (basename($normalized) !== 'autoload.php') {
+            return null;
+        }
+
+        return self::projectRootFromVendorDir(dirname($normalized));
+    }
+
+    /**
+     * @param string $vendorDir
+     * @return string|null
+     */
+    private static function projectRootFromVendorDir(string $vendorDir): ?string
+    {
+        $normalized = rtrim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $vendorDir), DIRECTORY_SEPARATOR);
+        if (basename($normalized) !== 'vendor') {
+            return null;
+        }
+
+        $root = dirname($normalized);
+        return $root !== '' ? $root : null;
+    }
+
+    /**
+     * @param string $dir
+     * @return bool
+     */
+    private static function isProjectRoot(string $dir): bool
+    {
+        return file_exists(rtrim($dir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php');
+    }
+}

@@ -55,6 +55,8 @@ By default, events are written to the path resolved in this order:
 2. `.env` file in the project root
 3. System temp dir (`sys_get_temp_dir() . '/cacheer-monitor.jsonl'`)
 
+Relative paths such as `Tests/cacheer-events.jsonl` are always resolved from the consuming project root, not from `vendor/cacheerphp/monitor`.
+
 To use a custom path, override after `autoload.php` is loaded:
 
 ```php
