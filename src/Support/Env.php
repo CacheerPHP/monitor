@@ -53,15 +53,27 @@ final class Env
         }
     }
 
-    /** Get the package root directory.
-     * 
-     * @return string Absolute path to the package root
+    /** Get the project root directory.
+     *
+     * Traverses upward from this file looking for a composer.json or .env,
+     * which reliably identifies the root whether the package is used standalone
+     * or installed as a Composer dependency (vendor/cacheerphp/monitor/...).
+     * Falls back to getcwd() so running the binary from the project root always works.
+     *
+     * @return string Absolute path to the project root
      */
     public static function root(): string
     {
-        // cacheer-monitor/src/Support/Env.php -> repo root is two levels up from 'server'
-        // Using composer baseDir: assume this file lives under repo/cacheer-monitor/src/...
-        return dirname(__DIR__, 2);
+        $dir = __DIR__;
+
+        while ($dir !== dirname($dir)) {
+            if (file_exists($dir . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php')) {
+                return rtrim($dir, DIRECTORY_SEPARATOR);
+            }
+            $dir = dirname($dir);
+        }
+
+        return rtrim((string) getcwd(), DIRECTORY_SEPARATOR);
     }
 }
 
