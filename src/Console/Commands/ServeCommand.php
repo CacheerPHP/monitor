@@ -65,7 +65,8 @@ final class ServeCommand
      */
     private function packageRoot(): string
     {
-        return Env::root();
+        // src/Console/Commands → up 3 levels → package root (where public/ and server/ live)
+        return dirname(__DIR__, 3);
     }
 
     /**
