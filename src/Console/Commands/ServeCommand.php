@@ -65,7 +65,7 @@ final class ServeCommand
      */
     private function packageRoot(): string
     {
-        return Env::root();
+        return dirname(__DIR__, 3);
     }
 
     /**
