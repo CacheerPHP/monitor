@@ -64,8 +64,14 @@ final class Env
      */
     public static function root(): string
     {
-        $dir = __DIR__;
+       
+        $cwd = rtrim((string) getcwd(), DIRECTORY_SEPARATOR);
+        if (file_exists($cwd . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php')) {
+            return $cwd;
+        }
 
+        // Fallback: traverse upward from __DIR__ (works in standalone/dev mode).
+        $dir = __DIR__;
         while ($dir !== dirname($dir)) {
             if (file_exists($dir . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php')) {
                 return rtrim($dir, DIRECTORY_SEPARATOR);
@@ -73,7 +79,7 @@ final class Env
             $dir = dirname($dir);
         }
 
-        return rtrim((string) getcwd(), DIRECTORY_SEPARATOR);
+        return $cwd;
     }
 }
 

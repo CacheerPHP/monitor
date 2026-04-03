@@ -12,10 +12,12 @@ if ($path !== '/' && $staticFile && str_starts_with($staticFile, realpath($publi
     return false;
 }
 
-$autoloadCandidates = [
-    __DIR__ . '/../vendor/autoload.php',  
-    __DIR__ . '/../../../../autoload.php',
-];
+
+$autoloadCandidates = array_filter([
+    getenv('CACHEER_AUTOLOAD') ?: null, 
+    __DIR__ . '/../../../autoload.php',
+    __DIR__ . '/../vendor/autoload.php',
+]);
 
 foreach ($autoloadCandidates as $autoload) {
     if (file_exists($autoload)) {

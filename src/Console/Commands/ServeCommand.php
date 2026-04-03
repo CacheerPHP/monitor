@@ -24,6 +24,7 @@ final class ServeCommand
         $quiet = $this->toBool($args['quiet'] ?? false);
         $eventsPath = $this->determineEventsPath($args['events'] ?? null);
         putenv('CACHEER_MONITOR_EVENTS=' . $eventsPath);
+        putenv('CACHEER_AUTOLOAD=' . Env::root() . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php');
 
         $commandLine = $this->serverCmd($host, $port);
         if (!$quiet) {
