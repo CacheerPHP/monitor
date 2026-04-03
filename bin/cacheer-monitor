@@ -3,7 +3,25 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../vendor/autoload.php';
+$autoloadCandidates = [
+    __DIR__ . '/../vendor/autoload.php',      // standalone / dev
+    __DIR__ . '/../../../autoload.php',        // installed as a Composer dependency
+];
+
+$autoloaderFound = false;
+foreach ($autoloadCandidates as $file) {
+    if (file_exists($file)) {
+        require_once $file;
+        $autoloaderFound = true;
+        break;
+    }
+}
+
+if (!$autoloaderFound) {
+    fwrite(STDERR, '[cacheer-monitor] ERROR: Could not find autoloader.' . PHP_EOL);
+    fwrite(STDERR, 'Run "composer install" in your project root first.' . PHP_EOL);
+    exit(1);
+}
 
 use Cacheer\Monitor\Console\Application;
 
