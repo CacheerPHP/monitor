@@ -4,229 +4,474 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Cacheer Monitor</title>
-    <script>
-      // Synchronous theme init — runs before any rendering
-      (function() {
-        var saved = null;
-        try { saved = localStorage.getItem('cacheer-theme'); } catch(e) {}
-        if (saved === 'light') {
-          document.documentElement.classList.remove('dark');
-        } else {
-          document.documentElement.classList.add('dark');
-        }
-      })();
-    </script>
+    <script src="assets/js/theme-init.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet" />
+    <link type="text/css" rel="stylesheet" href="assets/css/style.css" />
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      // Config MUST be set after CDN loads (documented approach)
-      tailwind.config = {
-        darkMode: 'class',
-        theme: {
-          extend: {
-            fontFamily: {
-              sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
-              mono: ['JetBrains Mono', 'Fira Code', 'ui-monospace', 'monospace'],
-            },
-          },
-        },
-      };
-    </script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" referrerpolicy="no-referrer" />
+    <script src="assets/js/tailwind-config.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+      referrerpolicy="no-referrer" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-      /* Animated number transitions */
-      .metric-value { transition: transform 0.2s ease, opacity 0.15s ease; }
-      .metric-value.updating { transform: scale(1.08); opacity: 0.7; }
-
-      /* Smooth expand for details */
-      details .details-content { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.3s ease; }
-      details[open] .details-content { grid-template-rows: 1fr; }
-      details .details-content > div { overflow: hidden; }
-
-      /* Pulse animation for live indicator */
-      @keyframes pulse-ring { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(2.2); opacity: 0; } }
-      .status-pulse { position: relative; }
-      .status-pulse.live::after {
-        content: '';
-        position: absolute;
-        inset: 0;
-        border-radius: 9999px;
-        background: inherit;
-        animation: pulse-ring 1.5s ease-out infinite;
-      }
-
-      /* Skeleton loading */
-      @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-      .skeleton {
-        background: linear-gradient(90deg, transparent 25%, rgba(148,163,184,0.15) 50%, transparent 75%);
-        background-size: 200% 100%;
-        animation: shimmer 1.5s ease-in-out infinite;
-        border-radius: 0.375rem;
-      }
-
-      /* Event row hover */
-      .event-row { transition: background-color 0.15s ease; }
-      .event-row:hover { background-color: rgba(148,163,184,0.08); }
-
-      /* Card hover lift */
-      .stat-card { transition: transform 0.15s ease, box-shadow 0.15s ease; }
-      .stat-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
-      .dark .stat-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-
-      /* Scrollbar styling */
-      .custom-scroll::-webkit-scrollbar { width: 6px; }
-      .custom-scroll::-webkit-scrollbar-track { background: transparent; }
-      .custom-scroll::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.3); border-radius: 3px; }
-      .custom-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,0.5); }
-
-      /* Theme toggle */
-      .theme-toggle { transition: transform 0.3s ease; }
-      .theme-toggle:hover { transform: rotate(30deg); }
-    </style>
   </head>
-  <body class="h-full bg-slate-50 text-slate-800 dark:bg-slate-900 dark:text-slate-100 overflow-x-hidden transition-colors duration-300">
+
+  <body
+    class="h-full dark:bg-[#06091a] text-slate-800 dark:text-slate-100 overflow-x-hidden transition-colors duration-300">
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- Animated Background                             -->
+    <!-- ═══════════════════════════════════════════════ -->
+    <div class="fixed inset-0 -z-10 overflow-hidden pointer-events-none" aria-hidden="true">
+      <div class="bg-orb bg-orb-1 dark:opacity-100 opacity-0 transition-opacity duration-500"></div>
+      <div class="bg-orb bg-orb-2 dark:opacity-100 opacity-0 transition-opacity duration-500"></div>
+      <div class="bg-orb bg-orb-3 dark:opacity-100 opacity-0 transition-opacity duration-500"></div>
+      <div class="dot-grid absolute inset-0"></div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- Activity Pulse Bar                              -->
+    <!-- ═══════════════════════════════════════════════ -->
+    <div id="activityBar" class="activity-bar fixed top-0 left-0 right-0 h-[2px] z-50 overflow-hidden">
+      <div class="activity-inner h-full w-1/3 bg-gradient-to-r from-transparent via-blue-500 to-transparent"></div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- Floating Sidebar Nav (desktop)                    -->
+    <!-- ═══════════════════════════════════════════════ -->
+    <nav
+      class="side-nav hidden xl:flex fixed left-3 top-1/2 -translate-y-1/2 z-20 flex-col gap-1 p-1.5 rounded-2xl glass shadow-lg">
+      <a
+        href="#metricsSection"
+        class="group relative flex items-center justify-center w-9 h-9 rounded-xl transition-all"
+        title="Metrics">
+        <i
+          class="fa-solid fa-chart-pie text-slate-500 dark:text-slate-500 group-hover:text-blue-400 text-xs transition-colors"></i>
+      </a>
+      <a
+        href="#chartsSection"
+        class="group relative flex items-center justify-center w-9 h-9 rounded-xl transition-all"
+        title="Timeline">
+        <i
+          class="fa-solid fa-chart-line text-slate-500 dark:text-slate-500 group-hover:text-violet-400 text-xs transition-colors"></i>
+      </a>
+      <a
+        href="#eventsSection"
+        class="group relative flex items-center justify-center w-9 h-9 rounded-xl transition-all"
+        title="Events">
+        <i
+          class="fa-solid fa-list-ul text-slate-500 dark:text-slate-500 group-hover:text-cyan-400 text-xs transition-colors"></i>
+      </a>
+      <a
+        href="#deepDiveSection"
+        class="group relative flex items-center justify-center w-9 h-9 rounded-xl transition-all"
+        title="Deep Dive">
+        <i
+          class="fa-solid fa-layer-group text-slate-500 dark:text-slate-500 group-hover:text-amber-400 text-xs transition-colors"></i>
+      </a>
+    </nav>
+
     <div class="min-h-full flex flex-col">
-      <!-- Top Bar -->
-      <header class="sticky top-0 z-20 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-700/80 shadow-sm">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col lg:flex-row items-start lg:items-center justify-between min-w-0 gap-y-2">
+      <!-- ═══════════════════════════════════════════════ -->
+      <!-- Top Bar                                          -->
+      <!-- ═══════════════════════════════════════════════ -->
+      <header class="sticky top-0 z-30 glass shadow-sm">
+        <div
+          class="max-w-[1440px] mx-auto px-4 sm:px-6 xl:pl-16 py-3 flex flex-col lg:flex-row items-start lg:items-center justify-between min-w-0 gap-y-2">
+          <!-- Left: brand -->
           <div class="flex items-center gap-3 min-w-0">
-            <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 shadow-sm">
+            <div
+              class="relative flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-600 shadow-md shadow-blue-500/20">
               <i class="fa-solid fa-gauge-high text-white text-sm"></i>
             </div>
-            <h1 class="font-bold text-lg tracking-tight">Cacheer Monitor</h1>
-            <span id="statusDot" class="ml-2 inline-flex items-center gap-2 text-xs text-slate-500">
-              <span class="w-2 h-2 rounded-full bg-slate-300 status-pulse" id="statusIndicator"></span>
-              <span id="lastUpdated">--</span>
-            </span>
+            <div class="flex flex-col">
+              <h1 class="font-bold text-base tracking-tight leading-tight">Cacheer Monitor</h1>
+              <span id="statusDot" class="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-500">
+                <span class="w-1.5 h-1.5 rounded-full bg-slate-400 status-pulse" id="statusIndicator"></span>
+                <span id="lastUpdated">--</span>
+              </span>
+            </div>
           </div>
+
+          <!-- Right: controls -->
           <div class="flex items-center gap-2 w-full lg:w-auto justify-start lg:justify-end shrink-0 flex-wrap">
-            <select id="refreshRate" class="px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-colors" title="Auto refresh interval">
+            <select id="refreshRate" class="ctrl-input" title="Auto refresh interval">
               <option value="off">Off</option>
               <option value="1000">1s</option>
               <option value="2000">2s</option>
               <option value="5000" selected>5s</option>
               <option value="10000">10s</option>
             </select>
-            <button id="btnThemeToggle" class="theme-toggle w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors" title="Toggle theme">
+            <button
+              id="btnThemeToggle"
+              class="theme-toggle w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200/20 dark:border-white/[0.06] hover:bg-white/10 dark:hover:bg-white/[0.06] text-slate-500 dark:text-slate-400 transition-colors"
+              title="Toggle theme">
               <i id="themeIcon" class="fa-solid fa-moon text-xs"></i>
             </button>
-            <a href="https://cacheerphp.com/docs/v5/en/cacheer-monitor/quick-start/" class="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-medium transition-colors" title="Open API docs" target="_blank" rel="noopener">
-              <i class="fa-regular fa-circle-question"></i> Docs
+            <a
+              href="https://cacheerphp.com/docs/v5/en/cacheer-monitor/quick-start/"
+              class="hidden md:inline-flex btn-ghost"
+              title="Docs"
+              target="_blank"
+              rel="noopener">
+              <i class="fa-regular fa-circle-question"></i>
+              Docs
             </a>
-            <button id="btnRefresh" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-medium shadow-sm transition-colors">
-              <i class="fa-solid fa-rotate" id="refreshIcon"></i> Refresh
+            <button
+              id="btnRefresh"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 active:from-blue-700 active:to-blue-600 text-white text-xs font-medium shadow-md shadow-blue-500/20 transition-all">
+              <i class="fa-solid fa-rotate" id="refreshIcon"></i>
+              Refresh
             </button>
-            <button id="btnClear" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950 text-xs font-medium transition-colors">
-              <i class="fa-regular fa-trash-can"></i> Clear
+            <button
+              id="btnClear"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-300/30 dark:border-rose-500/20 text-rose-500 dark:text-rose-400 hover:bg-rose-500/10 text-xs font-medium transition-colors">
+              <i class="fa-regular fa-trash-can"></i>
+              Clear
             </button>
           </div>
         </div>
       </header>
 
-      <main class="max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 space-y-5 min-w-0 flex-1">
-        <!-- Config bar -->
+      <main class="max-w-[1440px] mx-auto w-full px-4 sm:px-6 xl:pl-16 py-6 space-y-5 min-w-0 flex-1">
+        <!-- ── Hit-rate alert ── -->
+        <div
+          id="hitRateAlert"
+          class="hidden flex items-center gap-3 px-4 py-3 rounded-xl border border-amber-400/30 dark:border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300 text-sm font-medium backdrop-blur-sm"></div>
+
+        <!-- ── Config / filter bar ── -->
         <div class="flex flex-col md:flex-row md:items-center gap-2 text-xs min-w-0 px-1">
-          <div class="flex items-center gap-2 min-w-0 text-slate-500 dark:text-slate-400">
-            <i class="fa-regular fa-file-lines"></i>
-            <span id="eventsFile" class="font-mono truncate max-w-xs lg:max-w-lg">--</span>
+          <div class="flex items-center gap-2 min-w-0 text-slate-500 dark:text-slate-500">
+            <i class="fa-regular fa-file-lines text-[10px]"></i>
+            <span id="eventsFile" class="font-mono truncate max-w-xs lg:max-w-lg text-[11px]">--</span>
             <button
               id="copyPath"
-              class="hidden lg:inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+              class="hidden lg:inline-flex btn-ghost text-[10px]"
               title="Copy events file path"
-              aria-label="Copy events file path"
-            >
-              <i class="fa-regular fa-copy"></i> Copy
+              aria-label="Copy events file path">
+              <i class="fa-regular fa-copy"></i>
+              Copy
             </button>
-            <span id="origin" class="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 font-medium">origin: --</span>
+            <span
+              id="origin"
+              class="px-2 py-0.5 rounded-md bg-white/[0.04] dark:bg-white/[0.04] border border-white/[0.04] text-slate-500 dark:text-slate-500 font-medium text-[11px]">
+              origin: --
+            </span>
           </div>
           <div class="grow"></div>
-          <div class="flex items-center gap-3 text-slate-500 dark:text-slate-400">
-            <span id="since"><i class="fa-regular fa-clock mr-1"></i>since: --</span>
+          <div class="flex items-center gap-3 text-slate-500 dark:text-slate-500 flex-wrap">
+            <span id="since" class="text-[11px]">
+              <i class="fa-regular fa-clock mr-1"></i>
+              since: --
+            </span>
+
+            <!-- Time-range filter -->
+            <div
+              class="flex items-center gap-0.5 rounded-lg overflow-hidden p-0.5 bg-white/[0.03] dark:bg-white/[0.03] border border-white/[0.04] dark:border-white/[0.04]">
+              <button data-time-range="5" class="time-pill">5m</button>
+              <button data-time-range="15" class="time-pill">15m</button>
+              <button data-time-range="60" class="time-pill">1h</button>
+              <button data-time-range="360" class="time-pill">6h</button>
+              <button data-time-range="1440" class="time-pill">24h</button>
+              <button data-time-range="null" class="time-pill active">All</button>
+            </div>
+
+            <!-- Namespace filter -->
             <div class="flex items-center gap-1.5">
-              <label class="text-slate-400">ns:</label>
-              <input id="nsFilter" placeholder="namespace" class="px-2.5 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 w-32 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-colors"/>
+              <label class="text-slate-500 dark:text-slate-600 text-[11px]">ns:</label>
+              <input id="nsFilter" placeholder="namespace" class="ctrl-input w-28" />
+            </div>
+
+            <!-- Hit-rate threshold -->
+            <div class="flex items-center gap-1.5" title="Alert when hit rate drops below this %">
+              <i class="fa-solid fa-bell text-amber-400/70 text-[11px]"></i>
+              <input
+                id="hitRateThreshold"
+                type="number"
+                min="0"
+                max="100"
+                value="50"
+                class="ctrl-input w-14 tabular-nums" />
+              <span class="text-slate-500 dark:text-slate-600 text-[11px]">%</span>
             </div>
           </div>
         </div>
 
-        <!-- Loading overlay -->
+        <!-- ── Loading overlay ── -->
         <div id="loadingState" class="hidden">
-          <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            <div class="skeleton h-24 rounded-xl"></div>
-            <div class="skeleton h-24 rounded-xl"></div>
-            <div class="skeleton h-24 rounded-xl"></div>
-            <div class="skeleton h-24 rounded-xl"></div>
-            <div class="skeleton h-24 rounded-xl"></div>
+          <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div class="skeleton h-44 rounded-xl col-span-2 row-span-2"></div>
+            <div class="skeleton h-20 rounded-xl"></div>
+            <div class="skeleton h-20 rounded-xl"></div>
+            <div class="skeleton h-20 rounded-xl"></div>
+            <div class="skeleton h-20 rounded-xl"></div>
+            <div class="skeleton h-20 rounded-xl"></div>
+            <div class="skeleton h-20 rounded-xl"></div>
+            <div class="skeleton h-20 rounded-xl"></div>
+            <div class="skeleton h-20 rounded-xl"></div>
           </section>
         </div>
 
-        <!-- Stats Grid -->
-        <section id="statsGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          <div class="stat-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 relative overflow-hidden">
-            <div class="absolute top-0 left-0 w-full h-0.5 bg-emerald-500"></div>
-            <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 font-medium"><i class="fa-solid fa-circle-check text-emerald-500"></i> Hits</div>
-            <div id="hits" class="metric-value text-2xl font-bold mt-1.5 tabular-nums">0</div>
-          </div>
-          <div class="stat-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 relative overflow-hidden">
-            <div class="absolute top-0 left-0 w-full h-0.5 bg-rose-500"></div>
-            <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 font-medium"><i class="fa-solid fa-circle-xmark text-rose-500"></i> Misses</div>
-            <div id="misses" class="metric-value text-2xl font-bold mt-1.5 tabular-nums">0</div>
-          </div>
-          <div class="stat-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 relative overflow-hidden">
-            <div class="absolute top-0 left-0 w-full h-0.5 bg-indigo-500"></div>
-            <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 font-medium"><i class="fa-solid fa-bullseye text-indigo-500"></i> Hit Rate</div>
-            <div id="hit_rate" class="metric-value text-2xl font-bold mt-1.5 tabular-nums">0%</div>
-          </div>
-          <div class="stat-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 relative overflow-hidden">
-            <div class="absolute top-0 left-0 w-full h-0.5 bg-amber-500"></div>
-            <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 font-medium"><i class="fa-solid fa-box-archive text-amber-500"></i> Puts</div>
-            <div id="puts" class="metric-value text-2xl font-bold mt-1.5 tabular-nums">0</div>
-          </div>
-          <div class="stat-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 relative overflow-hidden">
-            <div class="absolute top-0 left-0 w-full h-0.5 bg-sky-500"></div>
-            <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 font-medium"><i class="fa-solid fa-broom text-sky-500"></i> Flushes</div>
-            <div id="flushes" class="metric-value text-2xl font-bold mt-1.5 tabular-nums">0</div>
-          </div>
-          <div class="stat-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 relative overflow-hidden">
-            <div class="absolute top-0 left-0 w-full h-0.5 bg-teal-500"></div>
-            <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 font-medium"><i class="fa-solid fa-arrows-rotate text-teal-500"></i> Renews</div>
-            <div id="renews" class="metric-value text-2xl font-bold mt-1.5 tabular-nums">0</div>
-          </div>
-          <div class="stat-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 relative overflow-hidden">
-            <div class="absolute top-0 left-0 w-full h-0.5 bg-fuchsia-500"></div>
-            <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 font-medium"><i class="fa-solid fa-trash-can text-fuchsia-500"></i> Clears</div>
-            <div id="clears" class="metric-value text-2xl font-bold mt-1.5 tabular-nums">0</div>
-          </div>
-          <div class="stat-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 relative overflow-hidden">
-            <div class="absolute top-0 left-0 w-full h-0.5 bg-rose-600"></div>
-            <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 font-medium"><i class="fa-solid fa-triangle-exclamation text-rose-600"></i> Errors</div>
-            <div id="errors" class="metric-value text-2xl font-bold mt-1.5 tabular-nums">0</div>
-          </div>
-          <div class="stat-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 relative overflow-hidden">
-            <div class="absolute top-0 left-0 w-full h-0.5 bg-violet-500"></div>
-            <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 font-medium"><i class="fa-regular fa-clock text-violet-500"></i> Avg Latency</div>
-            <div id="lat_avg" class="metric-value text-2xl font-bold mt-1.5 tabular-nums">--</div>
-            <div class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 tabular-nums">p95: <span id="lat_p95">--</span> &middot; p99: <span id="lat_p99">--</span></div>
+        <!-- ═══════════════════════════════════════════════ -->
+        <!-- Metrics Bento Grid                               -->
+        <!-- ═══════════════════════════════════════════════ -->
+        <section id="statsGrid">
+          <div id="metricsSection" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <!-- ── HERO: Hit Rate Gauge ── -->
+            <div
+              class="glass-card glow-indigo col-span-2 row-span-2 p-6 flex flex-col items-center justify-center relative overflow-hidden">
+              <!-- Subtle gradient accent -->
+              <div
+                class="absolute inset-0 bg-gradient-to-br from-indigo-500/[0.04] via-transparent to-blue-500/[0.04] pointer-events-none"></div>
+              <div class="relative">
+                <svg class="w-36 h-36" viewBox="0 0 140 140">
+                  <defs>
+                    <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stop-color="#6366f1" />
+                      <stop offset="50%" stop-color="#3b82f6" />
+                      <stop offset="100%" stop-color="#06b6d4" />
+                    </linearGradient>
+                  </defs>
+                  <!-- Track -->
+                  <circle
+                    cx="70"
+                    cy="70"
+                    r="58"
+                    fill="none"
+                    stroke="currentColor"
+                    class="text-slate-200/10 dark:text-white/[0.04]"
+                    stroke-width="10" />
+                  <!-- Progress -->
+                  <circle
+                    id="gaugeRing"
+                    cx="70"
+                    cy="70"
+                    r="58"
+                    fill="none"
+                    stroke="url(#gaugeGradient)"
+                    stroke-width="10"
+                    stroke-linecap="round"
+                    stroke-dasharray="364.42"
+                    stroke-dashoffset="364.42"
+                    transform="rotate(-90 70 70)" />
+                </svg>
+                <div class="absolute inset-0 flex flex-col items-center justify-center">
+                  <div
+                    id="hit_rate"
+                    class="metric-value text-2xl font-extrabold tabular-nums text-gradient bg-gradient-to-r from-indigo-400 via-blue-400 to-cyan-400">
+                    0%
+                  </div>
+                </div>
+              </div>
+              <div class="mt-3 flex items-center gap-2 text-xs font-semibold text-slate-400 dark:text-slate-500">
+                <i class="fa-solid fa-bullseye text-indigo-400"></i>
+                Hit Rate
+              </div>
+              <div class="mt-1 text-[11px] text-slate-400 dark:text-slate-600 tabular-nums">
+                p95:
+                <span id="lat_p95">--</span>
+                · p99:
+                <span id="lat_p99">--</span>
+              </div>
+            </div>
+
+            <!-- ── Hits ── -->
+            <div class="glass-card glow-emerald p-4 relative overflow-hidden">
+              <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-emerald-500 to-emerald-400"></div>
+              <div class="flex items-center justify-between mb-3">
+                <span class="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                  Hits
+                </span>
+                <div class="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                  <i class="fa-solid fa-circle-check text-emerald-400 text-xs"></i>
+                </div>
+              </div>
+              <div
+                id="hits"
+                class="metric-value text-2xl font-bold tabular-nums text-gradient bg-gradient-to-r from-emerald-400 to-emerald-300">
+                0
+              </div>
+            </div>
+
+            <!-- ── Misses ── -->
+            <div class="glass-card glow-rose p-4 relative overflow-hidden">
+              <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-rose-500 to-rose-400"></div>
+              <div class="flex items-center justify-between mb-3">
+                <span class="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                  Misses
+                </span>
+                <div class="w-7 h-7 rounded-lg bg-rose-500/10 flex items-center justify-center">
+                  <i class="fa-solid fa-circle-xmark text-rose-400 text-xs"></i>
+                </div>
+              </div>
+              <div
+                id="misses"
+                class="metric-value text-2xl font-bold tabular-nums text-gradient bg-gradient-to-r from-rose-400 to-rose-300">
+                0
+              </div>
+            </div>
+
+            <!-- ── Puts ── -->
+            <div class="glass-card glow-amber p-4 relative overflow-hidden">
+              <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-amber-500 to-amber-400"></div>
+              <div class="flex items-center justify-between mb-3">
+                <span class="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                  Puts
+                </span>
+                <div class="w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                  <i class="fa-solid fa-box-archive text-amber-400 text-xs"></i>
+                </div>
+              </div>
+              <div
+                id="puts"
+                class="metric-value text-2xl font-bold tabular-nums text-gradient bg-gradient-to-r from-amber-400 to-amber-300">
+                0
+              </div>
+            </div>
+
+            <!-- ── Flushes ── -->
+            <div class="glass-card glow-sky p-4 relative overflow-hidden">
+              <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-sky-500 to-sky-400"></div>
+              <div class="flex items-center justify-between mb-3">
+                <span class="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                  Flushes
+                </span>
+                <div class="w-7 h-7 rounded-lg bg-sky-500/10 flex items-center justify-center">
+                  <i class="fa-solid fa-broom text-sky-400 text-xs"></i>
+                </div>
+              </div>
+              <div
+                id="flushes"
+                class="metric-value text-2xl font-bold tabular-nums text-gradient bg-gradient-to-r from-sky-400 to-sky-300">
+                0
+              </div>
+            </div>
+
+            <!-- ── Renews ── -->
+            <div class="glass-card glow-teal p-4 relative overflow-hidden">
+              <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-teal-500 to-teal-400"></div>
+              <div class="flex items-center justify-between mb-3">
+                <span class="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                  Renews
+                </span>
+                <div class="w-7 h-7 rounded-lg bg-teal-500/10 flex items-center justify-center">
+                  <i class="fa-solid fa-arrows-rotate text-teal-400 text-xs"></i>
+                </div>
+              </div>
+              <div
+                id="renews"
+                class="metric-value text-2xl font-bold tabular-nums text-gradient bg-gradient-to-r from-teal-400 to-teal-300">
+                0
+              </div>
+            </div>
+
+            <!-- ── Clears ── -->
+            <div class="glass-card glow-fuchsia p-4 relative overflow-hidden">
+              <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-fuchsia-500 to-fuchsia-400"></div>
+              <div class="flex items-center justify-between mb-3">
+                <span class="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                  Clears
+                </span>
+                <div class="w-7 h-7 rounded-lg bg-fuchsia-500/10 flex items-center justify-center">
+                  <i class="fa-solid fa-trash-can text-fuchsia-400 text-xs"></i>
+                </div>
+              </div>
+              <div
+                id="clears"
+                class="metric-value text-2xl font-bold tabular-nums text-gradient bg-gradient-to-r from-fuchsia-400 to-fuchsia-300">
+                0
+              </div>
+            </div>
+
+            <!-- ── Errors ── -->
+            <div class="glass-card glow-rose p-4 relative overflow-hidden">
+              <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-rose-600 to-rose-500"></div>
+              <div class="flex items-center justify-between mb-3">
+                <span class="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                  Errors
+                </span>
+                <div class="w-7 h-7 rounded-lg bg-rose-600/10 flex items-center justify-center">
+                  <i class="fa-solid fa-triangle-exclamation text-rose-500 text-xs"></i>
+                </div>
+              </div>
+              <div
+                id="errors"
+                class="metric-value text-2xl font-bold tabular-nums text-gradient bg-gradient-to-r from-rose-500 to-rose-400">
+                0
+              </div>
+            </div>
+
+            <!-- ── Avg Latency ── -->
+            <div class="glass-card glow-violet p-4 relative overflow-hidden">
+              <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-violet-500 to-violet-400"></div>
+              <div class="flex items-center justify-between mb-3">
+                <span class="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                  Avg Latency
+                </span>
+                <div class="w-7 h-7 rounded-lg bg-violet-500/10 flex items-center justify-center">
+                  <i class="fa-regular fa-clock text-violet-400 text-xs"></i>
+                </div>
+              </div>
+              <div
+                id="lat_avg"
+                class="metric-value text-2xl font-bold tabular-nums text-gradient bg-gradient-to-r from-violet-400 to-violet-300">
+                --
+              </div>
+            </div>
           </div>
         </section>
 
-        <!-- Timeline Insights (open by default - most useful) -->
-        <section class="space-y-3">
-          <details open class="group rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 shadow-sm overflow-hidden">
-            <summary class="flex cursor-pointer items-center justify-between text-sm font-semibold text-slate-700 dark:text-slate-200 px-5 py-3.5 select-none hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors [&::-webkit-details-marker]:hidden">
-              <span class="flex items-center gap-2"><i class="fa-solid fa-chart-line text-indigo-500"></i> Timeline Insights</span>
-              <span class="text-slate-400 transition-transform duration-200 group-open:rotate-180"><i class="fa-solid fa-chevron-down text-xs"></i></span>
+        <!-- ═══════════════════════════════════════════════ -->
+        <!-- Timeline Insights                                -->
+        <!-- ═══════════════════════════════════════════════ -->
+        <section id="chartsSection" class="space-y-3">
+          <details open class="group glass-card overflow-hidden">
+            <summary
+              class="flex cursor-pointer items-center justify-between text-sm font-semibold px-5 py-3.5 select-none hover:bg-white/[0.03] dark:hover:bg-white/[0.03] transition-colors [&::-webkit-details-marker]:hidden">
+              <span class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-lg bg-indigo-500/10 flex items-center justify-center">
+                  <i class="fa-solid fa-chart-line text-indigo-400 text-xs"></i>
+                </div>
+                <span class="text-slate-700 dark:text-slate-200">Timeline Insights</span>
+              </span>
+              <span class="text-slate-400 dark:text-slate-600 transition-transform duration-200 group-open:rotate-180">
+                <i class="fa-solid fa-chevron-down text-xs"></i>
+              </span>
             </summary>
             <div class="details-content">
               <div>
-                <div class="px-5 pb-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <div class="p-4 rounded-xl border border-slate-100 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-900/40">
-                    <h3 class="font-semibold text-sm mb-3 text-slate-600 dark:text-slate-300"><i class="fa-solid fa-chart-area text-emerald-500 mr-2"></i>Hits vs Misses <span class="text-[11px] font-normal text-slate-400">(last 10 min)</span></h3>
+                <div class="px-5 pb-5 grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+                  <div
+                    class="p-4 rounded-xl bg-white/[0.02] dark:bg-white/[0.02] border border-white/[0.04] dark:border-white/[0.04]">
+                    <h3 class="font-semibold text-sm mb-3 text-slate-500 dark:text-slate-400">
+                      <i class="fa-solid fa-chart-area text-emerald-400 mr-2"></i>
+                      Hits vs Misses
+                      <span class="text-[11px] font-normal text-slate-500 dark:text-slate-600">(last 10 min)</span>
+                    </h3>
                     <canvas id="chartHitsMisses" height="180" class="w-full max-w-full"></canvas>
                   </div>
-                  <div class="p-4 rounded-xl border border-slate-100 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-900/40">
-                    <h3 class="font-semibold text-sm mb-3 text-slate-600 dark:text-slate-300"><i class="fa-solid fa-wave-square text-violet-500 mr-2"></i>Latency <span class="text-[11px] font-normal text-slate-400">(avg ms, last 10 min)</span></h3>
+                  <div
+                    class="p-4 rounded-xl bg-white/[0.02] dark:bg-white/[0.02] border border-white/[0.04] dark:border-white/[0.04]">
+                    <h3 class="font-semibold text-sm mb-3 text-slate-500 dark:text-slate-400">
+                      <i class="fa-solid fa-wave-square text-violet-400 mr-2"></i>
+                      Latency
+                      <span class="text-[11px] font-normal text-slate-500 dark:text-slate-600">
+                        (avg ms, last 10 min)
+                      </span>
+                    </h3>
                     <canvas id="chartLatency" height="180" class="w-full max-w-full"></canvas>
+                  </div>
+                  <div
+                    class="p-4 rounded-xl bg-white/[0.02] dark:bg-white/[0.02] border border-white/[0.04] dark:border-white/[0.04]">
+                    <h3 class="font-semibold text-sm mb-3 text-slate-500 dark:text-slate-400">
+                      <i class="fa-solid fa-hourglass-half text-purple-400 mr-2"></i>
+                      TTL Distribution
+                      <span class="text-[11px] font-normal text-slate-500 dark:text-slate-600">(write events)</span>
+                    </h3>
+                    <canvas id="chartTtl" height="180" class="w-full max-w-full"></canvas>
                   </div>
                 </div>
               </div>
@@ -234,17 +479,25 @@
           </details>
         </section>
 
-        <!-- Recent Events -->
-        <section class="rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 shadow-sm overflow-hidden">
-          <div class="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 dark:border-slate-700/60">
-            <h3 class="font-semibold text-sm flex items-center gap-2"><i class="fa-solid fa-list-ul text-blue-500"></i> Recent Events</h3>
-            <div class="flex items-center gap-2 text-xs">
-              <select id="eventLimit" class="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500/30 outline-none transition-colors">
+        <!-- ═══════════════════════════════════════════════ -->
+        <!-- Recent Events                                     -->
+        <!-- ═══════════════════════════════════════════════ -->
+        <section id="eventsSection" class="glass-card overflow-hidden">
+          <div
+            class="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.04] dark:border-white/[0.04] flex-wrap gap-2">
+            <h3 class="font-semibold text-sm flex items-center gap-2.5">
+              <div class="w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                <i class="fa-solid fa-list-ul text-blue-400 text-xs"></i>
+              </div>
+              <span class="text-slate-700 dark:text-slate-200">Recent Events</span>
+            </h3>
+            <div class="flex items-center gap-2 text-xs flex-wrap">
+              <select id="eventLimit" class="ctrl-input">
                 <option>50</option>
                 <option selected>200</option>
                 <option>500</option>
               </select>
-              <select id="typeFilter" class="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500/30 outline-none transition-colors">
+              <select id="typeFilter" class="ctrl-input">
                 <option value="">all types</option>
                 <option>hit</option>
                 <option>miss</option>
@@ -255,47 +508,94 @@
                 <option>tag</option>
                 <option>error</option>
               </select>
+              <button id="btnExportJson" class="btn-ghost" title="Export events as JSON">
+                <i class="fa-solid fa-download text-[10px]"></i>
+                JSON
+              </button>
+              <button id="btnExportCsv" class="btn-ghost" title="Export events as CSV">
+                <i class="fa-solid fa-file-csv text-[10px]"></i>
+                CSV
+              </button>
+              <button id="btnCleanupRotated" class="btn-ghost" title="Delete rotated log files older than 7 days">
+                <i class="fa-solid fa-broom text-[10px]"></i>
+              </button>
             </div>
           </div>
           <div id="events" class="custom-scroll max-h-[480px] overflow-auto">
-            <div id="eventsEmpty" class="flex flex-col items-center justify-center py-12 text-slate-400 dark:text-slate-500">
-              <i class="fa-regular fa-clock text-3xl mb-3"></i>
-              <p class="text-sm font-medium">No events yet</p>
-              <p class="text-xs mt-1">Events will appear here as they stream in</p>
+            <div
+              id="eventsEmpty"
+              class="flex flex-col items-center justify-center py-16 text-slate-400 dark:text-slate-600">
+              <div
+                class="w-12 h-12 rounded-2xl bg-white/[0.04] dark:bg-white/[0.04] flex items-center justify-center mb-4">
+                <i class="fa-regular fa-clock text-2xl"></i>
+              </div>
+              <p data-empty-title class="text-sm font-medium">No events yet</p>
+              <p data-empty-detail class="text-xs mt-1 text-slate-400 dark:text-slate-600">
+                Events will appear here as they stream in
+              </p>
             </div>
           </div>
         </section>
 
-        <!-- Deep-dive sections -->
-        <section class="space-y-3">
-          <details class="group rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 shadow-sm overflow-hidden">
-            <summary class="flex cursor-pointer items-center justify-between text-sm font-semibold text-slate-700 dark:text-slate-200 px-5 py-3.5 select-none hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors [&::-webkit-details-marker]:hidden">
-              <span class="flex items-center gap-2"><i class="fa-solid fa-layer-group text-amber-500"></i> Drivers &amp; Top Keys</span>
-              <span class="text-slate-400 transition-transform duration-200 group-open:rotate-180"><i class="fa-solid fa-chevron-down text-xs"></i></span>
+        <!-- ═══════════════════════════════════════════════ -->
+        <!-- Deep Dive                                          -->
+        <!-- ═══════════════════════════════════════════════ -->
+        <section id="deepDiveSection" class="space-y-3">
+          <!-- Drivers & Top Keys -->
+          <details class="group glass-card overflow-hidden">
+            <summary
+              class="flex cursor-pointer items-center justify-between text-sm font-semibold px-5 py-3.5 select-none hover:bg-white/[0.03] dark:hover:bg-white/[0.03] transition-colors [&::-webkit-details-marker]:hidden">
+              <span class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                  <i class="fa-solid fa-layer-group text-amber-400 text-xs"></i>
+                </div>
+                <span class="text-slate-700 dark:text-slate-200">Drivers &amp; Top Keys</span>
+              </span>
+              <span class="text-slate-400 dark:text-slate-600 transition-transform duration-200 group-open:rotate-180">
+                <i class="fa-solid fa-chevron-down text-xs"></i>
+              </span>
             </summary>
             <div class="details-content">
               <div>
                 <div class="px-5 pb-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <div class="p-4 rounded-xl border border-slate-100 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-900/40">
+                  <!-- Drivers -->
+                  <div
+                    class="p-4 rounded-xl bg-white/[0.02] dark:bg-white/[0.02] border border-white/[0.04] dark:border-white/[0.04]">
                     <div class="flex items-center justify-between mb-3">
-                      <h3 class="font-semibold text-sm text-slate-600 dark:text-slate-300"><i class="fa-solid fa-server text-sky-500 mr-2"></i>Drivers</h3>
-                      <span class="text-xs text-slate-400 tabular-nums" id="totalEvents">0 events</span>
+                      <h3 class="font-semibold text-sm text-slate-500 dark:text-slate-400">
+                        <i class="fa-solid fa-server text-sky-400 mr-2"></i>
+                        Drivers
+                      </h3>
+                      <span class="text-[11px] text-slate-500 dark:text-slate-600 tabular-nums" id="totalEvents">
+                        0 events
+                      </span>
                     </div>
                     <canvas id="driversChart" height="170" class="mb-3 w-full max-w-full"></canvas>
                     <div id="driversList" class="space-y-2.5"></div>
                   </div>
-                  <div class="p-4 rounded-xl border border-slate-100 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-900/40">
+                  <!-- Top Keys -->
+                  <div
+                    class="p-4 rounded-xl bg-white/[0.02] dark:bg-white/[0.02] border border-white/[0.04] dark:border-white/[0.04]">
                     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
-                      <h3 class="font-semibold text-sm text-slate-600 dark:text-slate-300"><i class="fa-solid fa-key text-amber-500 mr-2"></i>Top Keys</h3>
+                      <h3 class="font-semibold text-sm text-slate-500 dark:text-slate-400">
+                        <i class="fa-solid fa-key text-amber-400 mr-2"></i>
+                        Top Keys
+                        <span class="text-[10px] font-normal text-slate-500 dark:text-slate-600 ml-1">
+                          — click to inspect
+                        </span>
+                      </h3>
                       <div class="flex items-center gap-2">
-                        <input id="filterKey" placeholder="filter key..." class="px-2.5 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-blue-500/30 outline-none transition-colors"/>
-                        <button id="clearFilter" class="px-2.5 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 font-medium transition-colors">clear</button>
+                        <input id="filterKey" placeholder="search key or prefix..." class="ctrl-input" />
+                        <button id="clearFilter" class="btn-ghost">clear</button>
                       </div>
                     </div>
                     <div class="max-h-64 overflow-auto custom-scroll">
                       <table class="w-full text-sm">
-                        <thead class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                          <tr><th class="text-left py-2 font-medium">Key</th><th class="text-right py-2 font-medium">Count</th></tr>
+                        <thead class="text-[10px] text-slate-400 dark:text-slate-600 uppercase tracking-wider">
+                          <tr>
+                            <th class="text-left py-2 font-medium">Key</th>
+                            <th class="text-right py-2 font-medium">Hits</th>
+                          </tr>
                         </thead>
                         <tbody id="topKeysBody"></tbody>
                       </table>
@@ -306,10 +606,19 @@
             </div>
           </details>
 
-          <details class="group rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 shadow-sm overflow-hidden">
-            <summary class="flex cursor-pointer items-center justify-between text-sm font-semibold text-slate-700 dark:text-slate-200 px-5 py-3.5 select-none hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors [&::-webkit-details-marker]:hidden">
-              <span class="flex items-center gap-2"><i class="fa-regular fa-folder-open text-teal-500"></i> Namespaces</span>
-              <span class="text-slate-400 transition-transform duration-200 group-open:rotate-180"><i class="fa-solid fa-chevron-down text-xs"></i></span>
+          <!-- Namespaces -->
+          <details class="group glass-card overflow-hidden">
+            <summary
+              class="flex cursor-pointer items-center justify-between text-sm font-semibold px-5 py-3.5 select-none hover:bg-white/[0.03] dark:hover:bg-white/[0.03] transition-colors [&::-webkit-details-marker]:hidden">
+              <span class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-lg bg-teal-500/10 flex items-center justify-center">
+                  <i class="fa-regular fa-folder-open text-teal-400 text-xs"></i>
+                </div>
+                <span class="text-slate-700 dark:text-slate-200">Namespaces</span>
+              </span>
+              <span class="text-slate-400 dark:text-slate-600 transition-transform duration-200 group-open:rotate-180">
+                <i class="fa-solid fa-chevron-down text-xs"></i>
+              </span>
             </summary>
             <div class="details-content">
               <div>
@@ -322,22 +631,97 @@
         </section>
       </main>
 
-      <!-- Footer -->
-      <footer class="border-t border-slate-200 dark:border-slate-700/60 mt-auto">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
-          <span>Cacheer Monitor</span>
-          <span>Powered by <a href="https://github.com/silviooosilva/CacheerPHP" class="hover:text-blue-500 transition-colors" target="_blank" rel="noopener">CacheerPHP</a></span>
+      <!-- ═══════════════════════════════════════════════ -->
+      <!-- Footer                                            -->
+      <!-- ═══════════════════════════════════════════════ -->
+      <footer class="border-t border-white/[0.04] dark:border-white/[0.04] mt-auto">
+        <div
+          class="max-w-[1440px] mx-auto px-4 sm:px-6 xl:pl-16 py-4 flex items-center justify-between text-xs text-slate-400 dark:text-slate-600">
+          <span class="flex items-center gap-2">
+            <div class="w-4 h-4 rounded bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+              <i class="fa-solid fa-gauge-high text-white text-[7px]"></i>
+            </div>
+            Cacheer Monitor
+          </span>
+          <span>
+            Powered by
+            <a
+              href="https://github.com/silviooosilva/CacheerPHP"
+              class="hover:text-blue-400 transition-colors"
+              target="_blank"
+              rel="noopener">
+              CacheerPHP
+            </a>
+          </span>
         </div>
       </footer>
     </div>
 
-    <!-- Tailwind CDN JIT safelist for dynamic classes used in JS -->
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- Key Inspector Panel                              -->
+    <!-- ═══════════════════════════════════════════════ -->
+
+    <!-- Backdrop -->
+    <div id="inspectorBackdrop" class="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm hidden" aria-hidden="true"></div>
+
+    <!-- Slide-in panel -->
+    <div
+      id="inspectorPanel"
+      class="fixed top-0 right-0 z-40 h-full w-full sm:w-[440px] translate-x-full flex flex-col border-l border-white/[0.06] dark:border-white/[0.06] shadow-2xl bg-slate-50 dark:bg-[#0a0e1f]"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="inspectorTitle">
+      <!-- Panel header -->
+      <div
+        class="flex items-center justify-between px-5 py-4 border-b border-slate-200/10 dark:border-white/[0.06] shrink-0">
+        <div class="flex items-center gap-2 min-w-0">
+          <div class="w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center">
+            <i class="fa-solid fa-magnifying-glass text-blue-400 text-xs"></i>
+          </div>
+          <span class="text-sm font-semibold text-slate-700 dark:text-slate-200">Key Inspector</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button
+            id="btnRefreshInspector"
+            class="btn-ghost disabled:opacity-40 disabled:cursor-not-allowed"
+            aria-label="Refresh inspector value">
+            <i id="refreshInspectorIcon" class="fa-solid fa-rotate text-[10px]"></i>
+            Refresh Value
+          </button>
+          <button
+            id="btnCloseInspector"
+            class="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/[0.06] dark:hover:bg-white/[0.06] text-slate-400 transition-colors"
+            aria-label="Close inspector">
+            <i class="fa-solid fa-xmark text-sm"></i>
+          </button>
+        </div>
+      </div>
+      <!-- Key name -->
+      <div class="px-5 py-2 border-b border-slate-200/10 dark:border-white/[0.06] shrink-0">
+        <span id="inspectorTitle" class="font-mono text-xs text-slate-500 dark:text-slate-500 break-all">--</span>
+      </div>
+      <!-- Loader -->
+      <div id="inspectorLoader" class="hidden flex items-center justify-center py-16">
+        <div class="w-10 h-10 rounded-2xl bg-blue-500/10 flex items-center justify-center">
+          <i class="fa-solid fa-circle-notch fa-spin text-blue-400 text-lg"></i>
+        </div>
+      </div>
+      <!-- Body -->
+      <div id="inspectorBody" class="flex-1 overflow-auto custom-scroll px-5 py-4"></div>
+    </div>
+
     <div class="hidden">
       <span class="bg-emerald-500 bg-rose-500"></span>
-      <span class="bg-emerald-100 text-emerald-700 bg-rose-100 text-rose-700 bg-amber-100 text-amber-700 bg-sky-100 text-sky-700 bg-teal-100 text-teal-700 bg-fuchsia-100 text-fuchsia-700 bg-indigo-100 text-indigo-700 bg-slate-100 text-slate-700"></span>
-      <span class="dark:bg-emerald-900/40 dark:text-emerald-300 dark:bg-rose-900/40 dark:text-rose-300 dark:bg-amber-900/40 dark:text-amber-300 dark:bg-sky-900/40 dark:text-sky-300 dark:bg-teal-900/40 dark:text-teal-300 dark:bg-fuchsia-900/40 dark:text-fuchsia-300 dark:bg-indigo-900/40 dark:text-indigo-300 dark:bg-slate-700/40 dark:text-slate-300"></span>
-      <span class="dark:bg-rose-900/60 dark:text-rose-200"></span>
+      <span
+        class="bg-emerald-100 text-emerald-700 bg-rose-100 text-rose-700 bg-amber-100 text-amber-700 bg-sky-100 text-sky-700 bg-teal-100 text-teal-700 bg-fuchsia-100 text-fuchsia-700 bg-indigo-100 text-indigo-700 bg-slate-100 text-slate-700 bg-lime-100 text-lime-700 bg-rose-200 text-rose-800"></span>
+      <span
+        class="dark:bg-emerald-900/40 dark:text-emerald-300 dark:bg-rose-900/40 dark:text-rose-300 dark:bg-amber-900/40 dark:text-amber-300 dark:bg-sky-900/40 dark:text-sky-300 dark:bg-teal-900/40 dark:text-teal-300 dark:bg-fuchsia-900/40 dark:text-fuchsia-300 dark:bg-indigo-900/40 dark:text-indigo-300 dark:bg-slate-700/40 dark:text-slate-300 dark:bg-lime-900/40 dark:text-lime-300 dark:bg-rose-900/60 dark:text-rose-200"></span>
+      <span class="translate-x-0 translate-x-full"></span>
+      <span
+        class="text-emerald-600 dark:text-emerald-400 text-rose-600 dark:text-rose-400 text-amber-600 dark:text-amber-400 text-indigo-600 dark:text-indigo-400"></span>
     </div>
+
     <script type="module" src="./assets/js/app.js"></script>
+    <script src="./assets/js/ui-observers.js"></script>
   </body>
 </html>
