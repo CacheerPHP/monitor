@@ -1,0 +1,20 @@
+{
+  "name": "cacheer-monitor",
+  "version": "1.0.5",
+  "description": "Real-time dashboard and telemetry for [CacheerPHP](https://github.com/cacheerphp/CacheerPHP). Instruments your cache layer automatically — no code changes required.",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "lint": "eslint public/assets/js/",
+    "lint:fix": "eslint --fix public/assets/js/ && npm run format",
+    "format": "prettier --write public/"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.2.1",
+    "prettier": "^3.8.3"
+  }
+}

@@ -1,7 +1,9 @@
 Tests/*
 vendor/
+node_modules/
 database/
 CacheerPHP/
 .env
-.env.example
 composer.lock
+.phpunit.result.cache
+cacheer.log
