@@ -8,6 +8,7 @@ use Cacheer\Monitor\Http\Kernel;
 $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 $publicDir = __DIR__ . '/../public';
 $staticFile = realpath($publicDir . $path);
+
 if ($path !== '/' && $staticFile && str_starts_with($staticFile, realpath($publicDir)) && is_file($staticFile)) {
     return false;
 }

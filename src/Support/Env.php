@@ -31,6 +31,39 @@ final class Env
     }
 
     /**
+     * Read an environment flag using common boolean string formats.
+     *
+     * @param string $key
+     * @param bool $default
+     * @return bool
+     */
+    public static function getBool(string $key, bool $default = false): bool
+    {
+        $value = self::get($key);
+        if (is_bool($value)) {
+            return $value;
+        }
+        if ($value === null || $value === '') {
+            return $default;
+        }
+
+        $parsed = filter_var($value, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE);
+        return $parsed ?? $default;
+    }
+
+    /**
+     * Force a reload of the .env file on the next call to get().
+     * Useful for tests or when the .env changes at runtime.
+     * 
+     * @return void
+     */
+    public static function reload(): void
+    {
+        self::$loaded = false;
+        self::$vars   = [];
+    }
+
+    /**
      * Load .env file if not already loaded
      * 
      * @return void

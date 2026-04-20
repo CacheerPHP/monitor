@@ -4,45 +4,64 @@ declare(strict_types=1);
 
 namespace Cacheer\Monitor\Http;
 
-/**
- * Minimal router mapping paths to controller methods.
- */
 final class Router
 {
+    /** @var array<string, callable(Request):Response> */
+    private array $routes;
+
+    /**
+     * Initializes the Router with the given ApiController and public directory.
+     *
+     * @param ApiController $controller The controller handling API requests
+     * @param string $publicDir The directory where static assets are located
+     */
     public function __construct(private readonly ApiController $controller, private readonly string $publicDir)
     {
+        $this->routes = [
+            '/api/health' => fn(Request $request): Response => $this->controller->health(),
+            '/api/config' => fn(Request $request): Response => $this->controller->config(),
+            '/api/metrics' => fn(Request $request): Response => $this->controller->metrics($request),
+            '/api/events' => fn(Request $request): Response => $this->controller->events($request),
+            '/api/events/clear' => fn(Request $request): Response => $this->controller->clear($request),
+            '/api/events/stream' => function (Request $request): Response {
+                $this->controller->stream($request);
+
+                return new Response(200, [], '');
+            },
+            '/api/events/export' => fn(Request $request): Response => $this->controller->export($request),
+            '/api/events/cleanup-rotated' => fn(Request $request): Response => $this->controller->cleanupRotated($request),
+            '/api/keys/inspect' => fn(Request $request): Response => $this->controller->keyInspect($request),
+        ];
     }
 
     /**
-     * Route the current request and return a response.
+     * Dispatches the incoming request to the appropriate handler based on the path.
      *
      * @param Request $request
      * @return Response
      */
     public function dispatch(Request $request): Response
     {
-        $path = $request->path;
-        if ($path === '/api/health') {
-            return $this->controller->health();
+        $handler = $this->routes[$request->path] ?? null;
+
+        if ($handler !== null) {
+            return $handler($request);
         }
-        if ($path === '/api/config') {
-            return $this->controller->config();
-        }
-        if ($path === '/api/metrics') {
-            return $this->controller->metrics($request);
-        }
-        if ($path === '/api/events') {
-            return $this->controller->events($request);
-        }
-        if ($path === '/api/events/clear') {
-            return $this->controller->clear($request);
-        }
-        if ($path === '/api/events/stream') {
-            // Stream outputs directly and exits
-            $this->controller->stream($request);
-            return new Response(200, [], '');
-        }
-        // default: return index.html
-        return new Response(200, ['Content-Type' => 'text/html; charset=utf-8'], (string) @file_get_contents($this->publicDir . '/index.html'));
+
+        return $this->indexResponse();
+    }
+
+    /**
+     * Generates a response for the index page.
+     *
+     * @return Response
+     */
+    private function indexResponse(): Response
+    {
+        return new Response(
+            200,
+            ['Content-Type' => 'text/html; charset=utf-8'],
+            (string) @file_get_contents($this->publicDir . '/index.html')
+        );
     }
 }
