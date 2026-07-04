@@ -36,35 +36,13 @@ final class ConfigResolver
     /**
      * Read a key directly from the .env file (no OS fallback) and return its value.
      *
+     * Delegates to {@see Env::dotEnv()} so the .env parsing lives in one place.
+     *
      * @param string $key
      * @return string|null
      */
     private static function fromDotEnv(string $key): ?string
     {
-        // Env::get already reads .env; but to distinguish origin we read file directly
-        $envFilePath = Env::root() . DIRECTORY_SEPARATOR . '.env';
-        if (!is_file($envFilePath)) {
-            return null;
-        }
-        $lines = @file($envFilePath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
-        foreach ($lines as $rawLine) {
-            $line = trim($rawLine);
-            if ($line === '' || str_starts_with($line, '#')) {
-                continue;
-            }
-            $delimiterPos = strpos($line, '=');
-            if ($delimiterPos === false) {
-                continue;
-            }
-            $foundKey = trim(substr($line, 0, $delimiterPos));
-            $foundValue = trim(substr($line, $delimiterPos + 1));
-            if ((($foundValue[0] ?? '') === '"' && str_ends_with($foundValue, '"')) || (($foundValue[0] ?? '') === "'" && str_ends_with($foundValue, "'"))) {
-                $foundValue = substr($foundValue, 1, -1);
-            }
-            if ($foundKey === $key) {
-                return $foundValue !== '' ? $foundValue : null;
-            }
-        }
-        return null;
+        return Env::dotEnv($key);
     }
 }

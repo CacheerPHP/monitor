@@ -29,7 +29,19 @@ final class Response
      */
     public static function json(array $data, int $status = 200): self
     {
-        return new self($status, ['Content-Type' => 'application/json'], json_encode($data, JSON_UNESCAPED_SLASHES));
+        // JSON_PARTIAL_OUTPUT_ON_ERROR keeps malformed telemetry (e.g. invalid
+        // UTF-8 in a captured value) from blanking the whole response; the
+        // null-coalesce guards the rare case where encoding fails outright.
+        $body = json_encode($data, JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR);
+        if ($body === false) {
+            return new self(
+                $status === 200 ? 500 : $status,
+                ['Content-Type' => 'application/json'],
+                '{"ok":false,"error":"Failed to encode response"}'
+            );
+        }
+
+        return new self($status, ['Content-Type' => 'application/json'], $body);
     }
 
     /**

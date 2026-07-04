@@ -31,6 +31,22 @@ final class Env
     }
 
     /**
+     * Read a key from the .env file only, ignoring OS environment variables.
+     *
+     * Used where the source of a value matters (e.g. distinguishing a dotenv
+     * origin from an OS env one). Returns null when the key is absent or empty.
+     *
+     * @param string $key
+     * @return string|null
+     */
+    public static function dotEnv(string $key): ?string
+    {
+        self::boot();
+        $value = self::$vars[$key] ?? null;
+        return ($value === null || $value === '') ? null : (string) $value;
+    }
+
+    /**
      * Read an environment flag using common boolean string formats.
      *
      * @param string $key
