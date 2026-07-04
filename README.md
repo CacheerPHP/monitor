@@ -92,9 +92,14 @@ The `JsonlReporter` is built for production:
 - **Auto-rotation** — rotates at 10 MB to prevent unbounded growth
 - **Instance IDs** — each reporter instance tags events for multi-process identification
 
-### Alternative: InstrumentedCacheer
+### Alternative: InstrumentedCacheer _(deprecated)_
 
-If you prefer explicit instrumentation over auto-registration:
+> **Deprecated.** Prefer the listener above — it auto-registers, covers static
+> calls, and shares its event mapping with CacheerPHP's core. Reach for this
+> wrapper only to instrument one specific instance, or on a core version without
+> the built-in listener.
+
+If you need explicit, per-instance instrumentation:
 
 ```php
 use Cacheer\Monitor\InstrumentedCacheer;
