@@ -445,3 +445,77 @@ html:not(.dark) .time-pill.active {
 html:not(.dark) body {
   background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 50%, #f0f9ff 100%);
 }
+
+/* ── Skip link (keyboard users) ── */
+.skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 100;
+  padding: 0.5rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border-radius: 0.625rem;
+  background: #2563eb;
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.35);
+  transform: translateY(-150%);
+  transition: transform 0.2s ease;
+}
+.skip-link:focus {
+  transform: translateY(0);
+  outline: none;
+}
+
+/* ── Visible keyboard focus (focus-visible only, not on mouse) ── */
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+select:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+.dark a:focus-visible,
+.dark button:focus-visible,
+.dark summary:focus-visible,
+.dark select:focus-visible,
+.dark input:focus-visible,
+.dark [tabindex]:focus-visible {
+  outline-color: #60a5fa;
+}
+/* Inputs already carry their own focus ring — avoid doubling up */
+.ctrl-input:focus-visible {
+  outline: none;
+}
+/* Main landing target shouldn't draw a box when focused via skip link */
+main:focus {
+  outline: none;
+}
+
+/* ── Respect reduced-motion preference (WCAG 2.3.3) ── */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .bg-orb,
+  .status-pulse.live::after,
+  .activity-bar.active .activity-inner,
+  .skeleton {
+    animation: none !important;
+  }
+  .glass-card:hover,
+  .theme-toggle:hover {
+    transform: none;
+  }
+}

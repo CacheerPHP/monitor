@@ -7,3 +7,4 @@ CacheerPHP/
 composer.lock
 .phpunit.result.cache
 cacheer.log
+.claude/
