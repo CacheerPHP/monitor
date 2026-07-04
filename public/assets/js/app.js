@@ -241,12 +241,7 @@ async function loadAndRenderEvents() {
 async function loadAndRenderSnapshot() {
   try {
     const limit = Number(el("eventLimit")?.value || 500);
-    const { metrics, events } = await fetchSnapshot(
-      getNamespaceFilter(),
-      limit,
-      AppState.timeFrom,
-      AppState.timeUntil,
-    );
+    const { metrics, events } = await fetchSnapshot(getNamespaceFilter(), limit, AppState.timeFrom, AppState.timeUntil);
     renderMetrics(metrics);
     renderEvents(events);
     updateStatusIndicator(true);
