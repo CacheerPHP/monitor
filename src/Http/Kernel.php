@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cacheer\Monitor\Http;
 
+use Cacheer\Monitor\Support\Env;
+
 /**
  * Kernel wires Router and Controller, handling requests and responses.
  */
@@ -43,8 +45,16 @@ final class Kernel
         header('Cache-Control: no-cache, no-store, must-revalidate');
         header('Pragma: no-cache');
         header('Expires: 0');
-        header('Access-Control-Allow-Origin: *');
-        header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-        header('Access-Control-Allow-Headers: Content-Type, X-Monitor-Token');
+
+        // The bundled dashboard is served same-origin, so cross-origin access
+        // is OFF by default. Set CACHEER_MONITOR_ALLOW_ORIGIN (e.g. a specific
+        // origin) only if you intentionally expose the API to another host.
+        $allowOrigin = Env::get('CACHEER_MONITOR_ALLOW_ORIGIN');
+        if (is_string($allowOrigin) && $allowOrigin !== '') {
+            header('Access-Control-Allow-Origin: ' . $allowOrigin);
+            header('Vary: Origin');
+            header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+            header('Access-Control-Allow-Headers: Content-Type, X-Monitor-Token');
+        }
     }
 }
