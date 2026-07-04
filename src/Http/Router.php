@@ -21,6 +21,7 @@ final class Router
             '/api/health' => fn(Request $request): Response => $this->controller->health(),
             '/api/config' => fn(Request $request): Response => $this->controller->config(),
             '/api/metrics' => fn(Request $request): Response => $this->controller->metrics($request),
+            '/api/snapshot' => fn(Request $request): Response => $this->controller->snapshot($request),
             '/api/events' => fn(Request $request): Response => $this->controller->events($request),
             '/api/events/clear' => fn(Request $request): Response => $this->controller->clear($request),
             '/api/events/stream' => function (Request $request): Response {

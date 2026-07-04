@@ -3,6 +3,7 @@ import {
   fetchConfig,
   fetchMetrics,
   fetchEvents,
+  fetchSnapshot,
   fetchKeyInspect,
   clearEventsFile,
   cleanupRotated,
@@ -27,6 +28,7 @@ import {
 const AppState = {
   refreshIntervalMs: 2000,
   refreshTimerId: null,
+  snapshotRefreshTimerId: null, // coalesces bursts of SSE events into one refresh
   driversChartInstance: null,
   ttlChartInstance: null,
   timeline: {
@@ -110,8 +112,7 @@ function setTimeRange(windowMinutes) {
     btn.classList.toggle("dark:text-slate-300", !isActive);
   });
 
-  loadAndRenderMetrics();
-  loadAndRenderEvents();
+  loadAndRenderSnapshot();
 }
 
 // [ data ]
@@ -163,27 +164,61 @@ function renderTtlChart(metrics) {
   AppState.ttlChartInstance = createBarChart(canvas.getContext("2d"), labels, values, "#8b5cf6");
 }
 
+function renderMetrics(metrics) {
+  updateMetricCards(metrics);
+  updateHitRateAlert(metrics, AppState.hitRateThreshold);
+  renderDrivers(metrics);
+  renderTtlChart(metrics);
+
+  const nsListEl = el("namespacesList");
+  if (nsListEl) {
+    renderNamespacesGrid(nsListEl, metrics?.namespaces || {});
+  }
+
+  const keysEl = el("topKeysBody");
+  if (keysEl) {
+    const filterText = String(el("filterKey")?.value || "");
+    renderTopKeysTable(keysEl, metrics?.top_keys || {}, filterText, openKeyInspector);
+  }
+}
+
+function renderEvents(events) {
+  const namespaceFilter = getNamespaceFilter();
+  const selectedType = String(el("typeFilter")?.value || "");
+  const filterText = String(el("filterKey")?.value || "").toLowerCase();
+
+  const filtered = events
+    .filter((ev) => !selectedType || ev.type === selectedType)
+    .filter(
+      (ev) =>
+        !filterText ||
+        String(ev?.payload?.key || "")
+          .toLowerCase()
+          .includes(filterText),
+    );
+
+  const eventsEl = el("events");
+  if (eventsEl) {
+    const hasFilters = Boolean(selectedType || filterText || namespaceFilter || AppState.timeFrom !== null);
+    const emptyTitle =
+      events.length === 0 ? "No events yet" : hasFilters ? "No events match current filters" : "No events available";
+    const emptyDetail =
+      events.length === 0
+        ? "Events will appear here as they stream in"
+        : hasFilters
+          ? "Try clearing key, type, namespace, or time-range filters."
+          : "No recent events were returned for the selected limit.";
+    renderEventsStream(eventsEl, filtered, openKeyInspector, { emptyTitle, emptyDetail });
+  }
+
+  updateTimelines(events);
+}
+
 async function loadAndRenderMetrics() {
   try {
     const limit = Number(el("eventLimit")?.value || 500);
     const metrics = await fetchMetrics(getNamespaceFilter(), limit, AppState.timeFrom, AppState.timeUntil);
-
-    updateMetricCards(metrics);
-    updateHitRateAlert(metrics, AppState.hitRateThreshold);
-    renderDrivers(metrics);
-    renderTtlChart(metrics);
-
-    const nsListEl = el("namespacesList");
-    if (nsListEl) {
-      renderNamespacesGrid(nsListEl, metrics?.namespaces || {});
-    }
-
-    const keysEl = el("topKeysBody");
-    if (keysEl) {
-      const filterText = String(el("filterKey")?.value || "");
-      renderTopKeysTable(keysEl, metrics?.top_keys || {}, filterText, openKeyInspector);
-    }
-
+    renderMetrics(metrics);
     updateStatusIndicator(true);
     hideLoading();
   } catch (_) {
@@ -195,38 +230,38 @@ async function loadAndRenderMetrics() {
 async function loadAndRenderEvents() {
   try {
     const limit = Number(el("eventLimit")?.value || 200);
-    const namespaceFilter = getNamespaceFilter();
-    const events = await fetchEvents(limit, namespaceFilter, AppState.timeFrom, AppState.timeUntil);
-
-    const selectedType = String(el("typeFilter")?.value || "");
-    const filterText = String(el("filterKey")?.value || "").toLowerCase();
-
-    const filtered = events
-      .filter((ev) => !selectedType || ev.type === selectedType)
-      .filter(
-        (ev) =>
-          !filterText ||
-          String(ev?.payload?.key || "")
-            .toLowerCase()
-            .includes(filterText),
-      );
-
-    const eventsEl = el("events");
-    if (eventsEl) {
-      const hasFilters = Boolean(selectedType || filterText || namespaceFilter || AppState.timeFrom !== null);
-      const emptyTitle =
-        events.length === 0 ? "No events yet" : hasFilters ? "No events match current filters" : "No events available";
-      const emptyDetail =
-        events.length === 0
-          ? "Events will appear here as they stream in"
-          : hasFilters
-            ? "Try clearing key, type, namespace, or time-range filters."
-            : "No recent events were returned for the selected limit.";
-      renderEventsStream(eventsEl, filtered, openKeyInspector, { emptyTitle, emptyDetail });
-    }
-
-    updateTimelines(events);
+    const events = await fetchEvents(limit, getNamespaceFilter(), AppState.timeFrom, AppState.timeUntil);
+    renderEvents(events);
   } catch (_) {}
+}
+
+// Single request that refreshes both metrics and the event stream from one
+// events-file read. Used by the auto-refresh tick, manual refresh, filters,
+// and (debounced) the SSE stream.
+async function loadAndRenderSnapshot() {
+  try {
+    const limit = Number(el("eventLimit")?.value || 500);
+    const { metrics, events } = await fetchSnapshot(getNamespaceFilter(), limit, AppState.timeFrom, AppState.timeUntil);
+    renderMetrics(metrics);
+    renderEvents(events);
+    updateStatusIndicator(true);
+    hideLoading();
+  } catch (_) {
+    updateStatusIndicator(false);
+    hideLoading();
+  }
+}
+
+// Coalesce a burst of stream events into at most one refresh per window, so a
+// high-throughput cache can't trigger a fetch storm on the dashboard.
+function scheduleSnapshotRefresh(delayMs = 300) {
+  if (AppState.snapshotRefreshTimerId) {
+    return;
+  }
+  AppState.snapshotRefreshTimerId = setTimeout(() => {
+    AppState.snapshotRefreshTimerId = null;
+    loadAndRenderSnapshot();
+  }, delayMs);
 }
 
 // [ timelines ]
@@ -434,8 +469,7 @@ function startAutoRefresh(select) {
   const ms = Number(val);
   AppState.refreshIntervalMs = ms > 0 ? ms : 2000;
   AppState.refreshTimerId = setInterval(() => {
-    loadAndRenderMetrics();
-    loadAndRenderEvents();
+    loadAndRenderSnapshot();
   }, AppState.refreshIntervalMs);
 }
 
@@ -450,8 +484,7 @@ function setupEventListeners() {
     const icon = el("refreshIcon");
     icon?.classList.add("fa-spin");
     setTimeout(() => icon?.classList.remove("fa-spin"), 800);
-    loadAndRenderMetrics();
-    loadAndRenderEvents();
+    loadAndRenderSnapshot();
   });
 
   // [ clear + cleanup ]
@@ -461,8 +494,7 @@ function setupEventListeners() {
     }
     const cleared = await clearEventsFile();
     if (cleared) {
-      await loadAndRenderMetrics();
-      await loadAndRenderEvents();
+      await loadAndRenderSnapshot();
     }
   });
   el("btnCleanupRotated")?.addEventListener("click", async () => {
@@ -485,27 +517,17 @@ function setupEventListeners() {
   }
 
   // [ filters ]
-  el("filterKey")?.addEventListener("input", () => {
-    loadAndRenderMetrics();
-    loadAndRenderEvents();
-  });
+  el("filterKey")?.addEventListener("input", () => loadAndRenderSnapshot());
   el("clearFilter")?.addEventListener("click", () => {
     const input = el("filterKey");
     if (input) {
       input.value = "";
     }
-    loadAndRenderMetrics();
-    loadAndRenderEvents();
+    loadAndRenderSnapshot();
   });
   el("typeFilter")?.addEventListener("change", () => loadAndRenderEvents());
-  el("eventLimit")?.addEventListener("change", () => {
-    loadAndRenderMetrics();
-    loadAndRenderEvents();
-  });
-  el("nsFilter")?.addEventListener("input", () => {
-    loadAndRenderMetrics();
-    loadAndRenderEvents();
-  });
+  el("eventLimit")?.addEventListener("change", () => loadAndRenderSnapshot());
+  el("nsFilter")?.addEventListener("input", () => loadAndRenderSnapshot());
 
   // [ copy path ]
   el("copyPath")?.addEventListener("click", async () => {
@@ -564,17 +586,15 @@ async function bootstrap() {
   syncThemeIcon();
   showLoading();
   await loadAndRenderConfig();
-  await loadAndRenderMetrics();
-  await loadAndRenderEvents();
+  await loadAndRenderSnapshot();
   setupEventListeners();
 
   if ("EventSource" in window) {
     try {
       const sse = new EventSource("/api/events/stream");
-      sse.onmessage = () => {
-        loadAndRenderEvents();
-        loadAndRenderMetrics();
-      };
+      // The stream pushes one message per new event line; debounce so a burst
+      // collapses into a single refresh instead of one fetch per event.
+      sse.onmessage = () => scheduleSnapshotRefresh();
       sse.addEventListener("ping", () => {});
       sse.onerror = () => sse.close();
     } catch (_) {}

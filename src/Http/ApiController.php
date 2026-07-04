@@ -104,6 +104,24 @@ final class ApiController
     }
 
     /**
+     * Returns metrics and events together from a single events-file read,
+     * so the dashboard can refresh everything with one request.
+     *
+     * @param Request $request
+     * @return Response
+     */
+    public function snapshot(Request $request): Response
+    {
+        $namespaceFilter = isset($request->query['namespace']) ? (string) $request->query['namespace'] : null;
+        $limit = isset($request->query['limit']) ? (int) $request->query['limit'] : 1000;
+        [$from, $until] = $this->parseTimeRange($request);
+
+        return Response::json(
+            $this->readService->snapshot($limit, $namespaceFilter, $from, $until)
+        );
+    }
+
+    /**
      * Inspects a specific key in the application.
      *
      * @param Request $request
@@ -159,6 +177,10 @@ final class ApiController
             return $this->errorResponse(405, 'Method Not Allowed', ['Allow' => 'POST']);
         }
 
+        if ($unauthorized = $this->unauthorizedResponse()) {
+            return $unauthorized;
+        }
+
         $maxAgeDays = 7;
         $body = $this->jsonBody();
 
@@ -184,16 +206,33 @@ final class ApiController
             return $this->errorResponse(405, 'Method Not Allowed', ['Allow' => 'POST']);
         }
 
-        $requiredToken = $this->context->requiredToken();
-        if ($requiredToken !== null) {
-            $provided = $_SERVER['HTTP_X_MONITOR_TOKEN'] ?? '';
-
-            if (!\is_string($provided) || !hash_equals((string) $requiredToken, $provided)) {
-                return $this->errorResponse(401, 'Unauthorized');
-            }
+        if ($unauthorized = $this->unauthorizedResponse()) {
+            return $unauthorized;
         }
 
         return Response::json(['ok' => $this->context->store()->clear()]);
+    }
+
+    /**
+     * Guard destructive endpoints with the configured monitor token.
+     *
+     * Returns a 401 Response when a token is required (CACHEER_MONITOR_TOKEN is
+     * set) but the X-Monitor-Token header is missing or wrong; null when the
+     * request may proceed (no token configured, or a valid one was supplied).
+     */
+    private function unauthorizedResponse(): ?Response
+    {
+        $requiredToken = $this->context->requiredToken();
+        if ($requiredToken === null) {
+            return null;
+        }
+
+        $provided = $_SERVER['HTTP_X_MONITOR_TOKEN'] ?? '';
+        if (\is_string($provided) && hash_equals($requiredToken, $provided)) {
+            return null;
+        }
+
+        return $this->errorResponse(401, 'Unauthorized');
     }
 
     /**

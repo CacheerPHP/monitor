@@ -93,6 +93,11 @@ final class Aggregator
                 $ttl = $payload['ttl'] ?? null;
                 self::recordTtlBucket($stats['ttl_distribution'], $type, $ttl);
             }
+
+            $durationMs = $payload['duration_ms'] ?? null;
+            if (is_numeric($durationMs)) {
+                $latencySamples[] = (float) $durationMs;
+            }
         }
 
         $lookupCount       = $stats['hits'] + $stats['misses'];
@@ -105,12 +110,6 @@ final class Aggregator
         arsort($stats['namespaces']);
         arsort($stats['types']);
 
-        foreach ($events as $eventRecord) {
-            $durationMs = $eventRecord['payload']['duration_ms'] ?? null;
-            if (is_numeric($durationMs)) {
-                $latencySamples[] = (float) $durationMs;
-            }
-        }
         if (!empty($latencySamples)) {
             sort($latencySamples);
             $sampleCount  = count($latencySamples);

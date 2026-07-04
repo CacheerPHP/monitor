@@ -25,10 +25,12 @@ final class EventStore
         if (!is_file($this->filePath)) {
             return [];
         }
-        $lines = @file($this->filePath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
-        if ($limit > 0) {
-            $lines = array_slice($lines, -$limit);
-        }
+        // For a bounded request, scan backwards and read only the tail bytes we
+        // need instead of slurping (and JSON-decoding) the entire file. The
+        // limit applies to raw lines first, then namespace/time filters narrow
+        // the result — same semantics as the previous file()+array_slice path.
+        $lines = $limit > 0 ? $this->tailLines($limit) : $this->eachLine();
+
         $events = [];
         foreach ($lines as $rawLine) {
             $decoded = json_decode($rawLine, true);
@@ -67,9 +69,8 @@ final class EventStore
         if (!is_file($this->filePath)) {
             return [];
         }
-        $lines = @file($this->filePath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
         $matches = [];
-        foreach ($lines as $rawLine) {
+        foreach ($this->eachLine() as $rawLine) {
             $decoded = json_decode($rawLine, true);
             if (!is_array($decoded)) {
                 continue;
@@ -92,6 +93,81 @@ final class EventStore
             $matches = array_slice($matches, 0, $limit);
         }
         return $matches;
+    }
+
+    /**
+     * Yield non-empty lines one at a time without holding the whole file in
+     * memory. Used for unbounded scans (full metrics, per-key history, export).
+     *
+     * @return \Generator<int,string>
+     */
+    private function eachLine(): \Generator
+    {
+        $handle = @fopen($this->filePath, 'rb');
+        if ($handle === false) {
+            return;
+        }
+        try {
+            while (($line = fgets($handle)) !== false) {
+                $line = rtrim($line, "\r\n");
+                if ($line !== '') {
+                    yield $line;
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /**
+     * Read the last $limit non-empty lines by scanning backwards in fixed-size
+     * chunks, so a "last N events" query touches only the tail of the file
+     * rather than reading and parsing all of it.
+     *
+     * Lines are returned in file order (oldest first), matching the previous
+     * file(FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) + array_slice(-N).
+     *
+     * @return list<string>
+     */
+    private function tailLines(int $limit): array
+    {
+        $handle = @fopen($this->filePath, 'rb');
+        if ($handle === false) {
+            return [];
+        }
+
+        $buffer = '';
+        try {
+            if (fseek($handle, 0, SEEK_END) !== 0) {
+                return [];
+            }
+            $pos = ftell($handle);
+            if ($pos === false || $pos === 0) {
+                return [];
+            }
+
+            $chunkSize    = 65536;
+            $newlineCount = 0;
+
+            // Read one extra newline beyond the limit so the oldest kept line
+            // is guaranteed complete (not truncated mid-chunk).
+            while ($pos > 0 && $newlineCount <= $limit) {
+                $read   = (int) min($chunkSize, $pos);
+                $pos   -= $read;
+                fseek($handle, $pos, SEEK_SET);
+                $chunk  = (string) fread($handle, $read);
+                $buffer = $chunk . $buffer;
+                $newlineCount += substr_count($chunk, "\n");
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        $lines = preg_split("/\r?\n/", $buffer, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        if (count($lines) > $limit) {
+            $lines = array_slice($lines, -$limit);
+        }
+        return $lines;
     }
 
     /**
@@ -137,10 +213,9 @@ final class EventStore
         if (!is_file($this->filePath)) {
             return @touch($this->filePath);
         }
-        $rotated = @rename($this->filePath, $this->filePath . '.' . date('Ymd_His') . '.bak');
-        if (!$rotated) {
-            return @file_put_contents($this->filePath, '') !== false;
-        }
+        // Best-effort: rotate the current log aside, then truncate. Whether or
+        // not the rename succeeds, the live file ends up empty (recreated).
+        @rename($this->filePath, $this->filePath . '.' . date('Ymd_His') . '.bak');
         return @file_put_contents($this->filePath, '') !== false;
     }
 

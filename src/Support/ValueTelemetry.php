@@ -35,9 +35,9 @@ final class ValueTelemetry
             'value_type' => gettype($value),
         ];
 
-        $serialized = @serialize($value);
-        if ($serialized !== false) {
-            $payload['size_bytes'] = strlen($serialized);
+        $size = $this->sizeOf($value);
+        if ($size !== null) {
+            $payload['size_bytes'] = $size;
         }
 
         if ($this->shouldCaptureValues()) {
@@ -45,6 +45,27 @@ final class ValueTelemetry
         }
 
         return $payload;
+    }
+
+    /**
+     * Approximate the byte size of a value for telemetry.
+     *
+     * Runs in the host application's request path on every cached read/write,
+     * so the common (and often largest) case — string payloads like HTML
+     * fragments or JSON blobs — is measured with strlen() in O(1) rather than
+     * paying serialize()'s full copy. Composite values fall back to serialize().
+     *
+     * @param mixed $value
+     * @return int|null
+     */
+    private function sizeOf(mixed $value): ?int
+    {
+        if (is_string($value)) {
+            return strlen($value);
+        }
+
+        $serialized = @serialize($value);
+        return $serialized !== false ? strlen($serialized) : null;
     }
 
     /**

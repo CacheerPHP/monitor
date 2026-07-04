@@ -35,6 +35,29 @@ export async function fetchMetrics(namespaceFilter = "", limit = 1000, from = nu
   return res.json();
 }
 
+export async function fetchSnapshot(namespaceFilter = "", limit = 1000, from = null, until = null) {
+  const params = new URLSearchParams();
+  if (namespaceFilter) {
+    params.set("namespace", namespaceFilter);
+  }
+  if (limit > 0) {
+    params.set("limit", String(limit));
+  }
+  if (from !== null) {
+    params.set("from", String(from));
+  }
+  if (until !== null) {
+    params.set("until", String(until));
+  }
+
+  const qs = params.toString();
+  const res = await fetch(`/api/snapshot${qs ? `?${qs}` : ""}`, NO_STORE);
+  if (!res.ok) {
+    throw new Error("Failed to load snapshot");
+  }
+  return res.json();
+}
+
 export async function fetchEvents(limit = 200, namespaceFilter = "", from = null, until = null) {
   const params = new URLSearchParams({ limit: String(limit) });
   if (namespaceFilter) {

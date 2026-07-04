@@ -18,6 +18,9 @@ final class JsonlReporter implements MetricsReporterInterface
 
     private string $instanceId;
 
+    /** @var resource|null Reused lock-file handle, opened lazily on first write. */
+    private $lockHandle = null;
+
     /**
      * @param string|null $filePath   Explicit events file path (optional)
      * @param int|null    $maxBytes   Max file size before rotation (null to disable)
@@ -67,25 +70,48 @@ final class JsonlReporter implements MetricsReporterInterface
         $line = json_encode($record, JSON_UNESCAPED_SLASHES) . PHP_EOL;
         $lineBytes = strlen($line);
 
-        // Use a separate lock file to serialize rotation + write atomically
-        $lockFile = $this->filePath . '.lock';
-        $lockFh = @fopen($lockFile, 'cb');
-        if (!$lockFh) {
-            // Fallback: write without lock protection
+        // Serialize rotation + write via a separate lock file. The handle is
+        // opened once and reused for the reporter's lifetime, so a high-traffic
+        // cache doesn't pay an fopen/fclose on every single operation.
+        $lockHandle = $this->lockHandle();
+        if ($lockHandle === null) {
+            // Fallback: write without rotation protection.
             @file_put_contents($this->filePath, $line, FILE_APPEND | LOCK_EX);
             return;
         }
 
-        flock($lockFh, LOCK_EX);
+        flock($lockHandle, LOCK_EX);
+        try {
+            // Rotate while holding the lock — safe from race conditions.
+            $this->rotateIfNeeded($lineBytes);
+            @file_put_contents($this->filePath, $line, FILE_APPEND);
+        } finally {
+            flock($lockHandle, LOCK_UN);
+        }
+    }
 
-        // Rotate while holding the lock — safe from race conditions
-        $this->rotateIfNeeded($lineBytes);
+    /**
+     * Lazily open and reuse a single lock-file handle. The lock file is never
+     * rotated/renamed, so the handle stays valid for the whole request.
+     *
+     * @return resource|null
+     */
+    private function lockHandle()
+    {
+        if (!is_resource($this->lockHandle)) {
+            $handle = @fopen($this->filePath . '.lock', 'cb');
+            $this->lockHandle = $handle === false ? null : $handle;
+        }
 
-        // Append the event line
-        @file_put_contents($this->filePath, $line, FILE_APPEND);
+        return $this->lockHandle;
+    }
 
-        flock($lockFh, LOCK_UN);
-        fclose($lockFh);
+    public function __destruct()
+    {
+        if (is_resource($this->lockHandle)) {
+            @fclose($this->lockHandle);
+            $this->lockHandle = null;
+        }
     }
 
     /** Ensure target directory exists. */

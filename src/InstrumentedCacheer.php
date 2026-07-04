@@ -9,8 +9,17 @@ use Cacheer\Monitor\Support\ValueTelemetry;
 use Silviooosilva\CacheerPhp\Cacheer;
 
 /**
- * Lightweight wrapper that instruments a Cacheer instance without modifying the core.
- * Note: Configure your Cacheer first, then wrap it for best chaining behavior.
+ * Lightweight wrapper that instruments a single Cacheer instance without
+ * modifying the core. Configure your Cacheer first, then wrap it.
+ *
+ * @deprecated Prefer {@see CacheerMonitorListener}, which CacheerPHP invokes via
+ *   its built-in event hook (auto-registered by Boot/bootstrap.php) and which
+ *   also covers static-facade calls. Use this wrapper only when you need to
+ *   instrument one specific instance, or on a core version without the listener.
+ *
+ *   Heads-up for maintainers: the method→event mapping below intentionally
+ *   mirrors {@see \Silviooosilva\CacheerPhp\Events\CacheEventDispatcher}, the
+ *   canonical source. Keep the two in sync when event names change.
  */
 final class InstrumentedCacheer
 {
@@ -253,7 +262,10 @@ final class InstrumentedCacheer
                 return 'unknown';
             }
 
-            return (new \ReflectionClass($store))->getShortName();
+            // Short class name without instantiating a ReflectionClass per event.
+            $class = $store::class;
+            $pos = strrpos($class, '\\');
+            return $pos === false ? $class : substr($class, $pos + 1);
         } catch (\Throwable) {
             return 'unknown';
         }

@@ -22,6 +22,8 @@
 
   <body
     class="h-full dark:bg-[#06091a] text-slate-800 dark:text-slate-100 overflow-x-hidden transition-colors duration-300">
+    <!-- Skip to content (keyboard / screen-reader users) -->
+    <a href="#mainContent" class="skip-link">Skip to content</a>
     <!-- ═══════════════════════════════════════════════ -->
     <!-- Animated Background                             -->
     <!-- ═══════════════════════════════════════════════ -->
@@ -43,33 +45,42 @@
     <!-- Floating Sidebar Nav (desktop)                    -->
     <!-- ═══════════════════════════════════════════════ -->
     <nav
+      aria-label="Section navigation"
       class="side-nav hidden xl:flex fixed left-3 top-1/2 -translate-y-1/2 z-20 flex-col gap-1 p-1.5 rounded-2xl glass shadow-lg">
       <a
         href="#metricsSection"
         class="group relative flex items-center justify-center w-9 h-9 rounded-xl transition-all"
-        title="Metrics">
+        title="Metrics"
+        aria-label="Jump to Metrics">
         <i
+          aria-hidden="true"
           class="fa-solid fa-chart-pie text-slate-500 dark:text-slate-500 group-hover:text-blue-400 text-xs transition-colors"></i>
       </a>
       <a
         href="#chartsSection"
         class="group relative flex items-center justify-center w-9 h-9 rounded-xl transition-all"
-        title="Timeline">
+        title="Timeline"
+        aria-label="Jump to Timeline Insights">
         <i
+          aria-hidden="true"
           class="fa-solid fa-chart-line text-slate-500 dark:text-slate-500 group-hover:text-violet-400 text-xs transition-colors"></i>
       </a>
       <a
         href="#eventsSection"
         class="group relative flex items-center justify-center w-9 h-9 rounded-xl transition-all"
-        title="Events">
+        title="Events"
+        aria-label="Jump to Recent Events">
         <i
+          aria-hidden="true"
           class="fa-solid fa-list-ul text-slate-500 dark:text-slate-500 group-hover:text-cyan-400 text-xs transition-colors"></i>
       </a>
       <a
         href="#deepDiveSection"
         class="group relative flex items-center justify-center w-9 h-9 rounded-xl transition-all"
-        title="Deep Dive">
+        title="Deep Dive"
+        aria-label="Jump to Deep Dive">
         <i
+          aria-hidden="true"
           class="fa-solid fa-layer-group text-slate-500 dark:text-slate-500 group-hover:text-amber-400 text-xs transition-colors"></i>
       </a>
     </nav>
@@ -98,7 +109,11 @@
 
           <!-- Right: controls -->
           <div class="flex items-center gap-2 w-full lg:w-auto justify-start lg:justify-end shrink-0 flex-wrap">
-            <select id="refreshRate" class="ctrl-input" title="Auto refresh interval">
+            <select
+              id="refreshRate"
+              class="ctrl-input"
+              title="Auto refresh interval"
+              aria-label="Auto refresh interval">
               <option value="off">Off</option>
               <option value="1000">1s</option>
               <option value="2000">2s</option>
@@ -108,8 +123,9 @@
             <button
               id="btnThemeToggle"
               class="theme-toggle w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200/20 dark:border-white/[0.06] hover:bg-white/10 dark:hover:bg-white/[0.06] text-slate-500 dark:text-slate-400 transition-colors"
-              title="Toggle theme">
-              <i id="themeIcon" class="fa-solid fa-moon text-xs"></i>
+              title="Toggle theme"
+              aria-label="Toggle light/dark theme">
+              <i id="themeIcon" aria-hidden="true" class="fa-solid fa-moon text-xs"></i>
             </button>
             <a
               href="https://cacheerphp.com/docs/v5/en/cacheer-monitor/quick-start/"
@@ -136,7 +152,10 @@
         </div>
       </header>
 
-      <main class="max-w-[1440px] mx-auto w-full px-4 sm:px-6 xl:pl-16 py-6 space-y-5 min-w-0 flex-1">
+      <main
+        id="mainContent"
+        tabindex="-1"
+        class="max-w-[1440px] mx-auto w-full px-4 sm:px-6 xl:pl-16 py-6 space-y-5 min-w-0 flex-1">
         <!-- ── Hit-rate alert ── -->
         <div
           id="hitRateAlert"
@@ -181,8 +200,8 @@
 
             <!-- Namespace filter -->
             <div class="flex items-center gap-1.5">
-              <label class="text-slate-500 dark:text-slate-600 text-[11px]">ns:</label>
-              <input id="nsFilter" placeholder="namespace" class="ctrl-input w-28" />
+              <label for="nsFilter" class="text-slate-500 dark:text-slate-600 text-[11px]">ns:</label>
+              <input id="nsFilter" placeholder="namespace" class="ctrl-input w-28" aria-label="Filter by namespace" />
             </div>
 
             <!-- Hit-rate threshold -->
@@ -194,6 +213,7 @@
                 min="0"
                 max="100"
                 value="50"
+                aria-label="Hit rate alert threshold (percent)"
                 class="ctrl-input w-14 tabular-nums" />
               <span class="text-slate-500 dark:text-slate-600 text-[11px]">%</span>
             </div>
@@ -227,7 +247,7 @@
               <div
                 class="absolute inset-0 bg-gradient-to-br from-indigo-500/[0.04] via-transparent to-blue-500/[0.04] pointer-events-none"></div>
               <div class="relative">
-                <svg class="w-36 h-36" viewBox="0 0 140 140">
+                <svg class="w-36 h-36" viewBox="0 0 140 140" aria-hidden="true" focusable="false">
                   <defs>
                     <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
                       <stop offset="0%" stop-color="#6366f1" />
@@ -492,12 +512,12 @@
               <span class="text-slate-700 dark:text-slate-200">Recent Events</span>
             </h3>
             <div class="flex items-center gap-2 text-xs flex-wrap">
-              <select id="eventLimit" class="ctrl-input">
+              <select id="eventLimit" class="ctrl-input" aria-label="Number of events to show">
                 <option>50</option>
                 <option selected>200</option>
                 <option>500</option>
               </select>
-              <select id="typeFilter" class="ctrl-input">
+              <select id="typeFilter" class="ctrl-input" aria-label="Filter events by type">
                 <option value="">all types</option>
                 <option>hit</option>
                 <option>miss</option>
@@ -516,8 +536,12 @@
                 <i class="fa-solid fa-file-csv text-[10px]"></i>
                 CSV
               </button>
-              <button id="btnCleanupRotated" class="btn-ghost" title="Delete rotated log files older than 7 days">
-                <i class="fa-solid fa-broom text-[10px]"></i>
+              <button
+                id="btnCleanupRotated"
+                class="btn-ghost"
+                title="Delete rotated log files older than 7 days"
+                aria-label="Delete rotated log files older than 7 days">
+                <i aria-hidden="true" class="fa-solid fa-broom text-[10px]"></i>
               </button>
             </div>
           </div>
@@ -585,7 +609,11 @@
                         </span>
                       </h3>
                       <div class="flex items-center gap-2">
-                        <input id="filterKey" placeholder="search key or prefix..." class="ctrl-input" />
+                        <input
+                          id="filterKey"
+                          placeholder="search key or prefix..."
+                          class="ctrl-input"
+                          aria-label="Search top keys by name or prefix" />
                         <button id="clearFilter" class="btn-ghost">clear</button>
                       </div>
                     </div>
