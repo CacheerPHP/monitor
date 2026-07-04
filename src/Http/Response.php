@@ -34,8 +34,11 @@ final class Response
         // null-coalesce guards the rare case where encoding fails outright.
         $body = json_encode($data, JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR);
         if ($body === false) {
+            // We're returning an error body, so the status must reflect an error:
+            // promote any success/redirect (< 400) code to 500, but keep an
+            // already-failing 4xx/5xx as-is.
             return new self(
-                $status === 200 ? 500 : $status,
+                $status < 400 ? 500 : $status,
                 ['Content-Type' => 'application/json'],
                 '{"ok":false,"error":"Failed to encode response"}'
             );
