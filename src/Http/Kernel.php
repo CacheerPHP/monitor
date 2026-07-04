@@ -50,7 +50,12 @@ final class Kernel
         // is OFF by default. Set CACHEER_MONITOR_ALLOW_ORIGIN (e.g. a specific
         // origin) only if you intentionally expose the API to another host.
         $allowOrigin = Env::get('CACHEER_MONITOR_ALLOW_ORIGIN');
-        if (is_string($allowOrigin) && $allowOrigin !== '') {
+        $allowOrigin = is_string($allowOrigin) ? trim($allowOrigin) : '';
+
+        // Reject values containing control characters (CR/LF, etc.) before they
+        // reach header(): an injected newline could otherwise split headers, and
+        // even a stray one just triggers a PHP warning and a dropped header.
+        if ($allowOrigin !== '' && !preg_match('/[\x00-\x1F\x7F]/', $allowOrigin)) {
             header('Access-Control-Allow-Origin: ' . $allowOrigin);
             header('Vary: Origin');
             header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
