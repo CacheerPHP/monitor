@@ -51,6 +51,18 @@ final class JsonlReporter implements MetricsReporterInterface
     }
 
     /**
+     * The resolved events file this reporter writes to.
+     *
+     * Worth surfacing: with no CACHEER_MONITOR_EVENTS set, the default lands in
+     * the system temp directory, so "the monitor reports nothing" is often
+     * really "the dashboard is reading a different file".
+     */
+    public function filePath(): string
+    {
+        return $this->filePath;
+    }
+
+    /**
      * Append a single event to the JSONL file.
      *
      * Uses a lock file to serialize rotation checks and writes,

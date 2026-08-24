@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cacheer\Monitor\Console;
 
+use Cacheer\Monitor\Console\Commands\DoctorCommand;
 use Cacheer\Monitor\Console\Commands\ServeCommand;
 
 /**
@@ -17,6 +18,7 @@ final class Application
     public function __construct()
     {
         $this->register('serve', [new ServeCommand(), 'run']);
+        $this->register('doctor', [new DoctorCommand(), 'run']);
         $this->register('help', function (): int {
             $this->printHelp();
             return 0;
@@ -93,7 +95,8 @@ final class Application
     {
         echo "Cacheer Monitor CLI\n\n";
         echo "Commands:\n";
-        echo "  serve           Start the local dashboard server\n\n";
+        echo "  serve           Start the local dashboard server\n";
+        echo "  doctor          Check the autoload bridge and report why it is inactive\n\n";
         echo "Options:\n";
         echo "  --host=127.0.0.1  Bind address (default 127.0.0.1)\n";
         echo "  --port=9966       Port (default 9966)\n";
