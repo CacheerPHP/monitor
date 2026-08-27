@@ -5,11 +5,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/cacheerphp/monitor/releases"><img src="https://img.shields.io/github/release/cacheerphp/monitor.svg?style=for-the-badge&color=blue" alt="Latest Version"/></a>
-  <img src="https://img.shields.io/packagist/dependency-v/cacheerphp/monitor/PHP?style=for-the-badge&color=blue" alt="PHP Version"/>
-  <img src="https://img.shields.io/packagist/dt/cacheerphp/monitor?style=for-the-badge&color=blue" alt="Downloads"/>
+  <a href="https://github.com/cacheerphp/monitor/releases"><img src="https://img.shields.io/github/release/cacheerphp/monitor.svg?style=for-the-badge&color=f2b93c" alt="Latest Version"/></a>
+  <img src="https://img.shields.io/packagist/dependency-v/cacheerphp/monitor/PHP?style=for-the-badge&color=f2b93c" alt="PHP Version"/>
+  <img src="https://img.shields.io/packagist/dt/cacheerphp/monitor?style=for-the-badge&color=f2b93c" alt="Downloads"/>
   <a href="https://github.com/cacheerphp/monitor"><img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="License"/></a>
-  <a href="https://github.com/cacheerphp/CacheerPHP"><img src="https://img.shields.io/badge/CacheerPHP-%5E4.7%20%7C%7C%20%5E5.0-blue?style=for-the-badge" alt="CacheerPHP"/></a>
+  <a href="https://github.com/cacheerphp/CacheerPHP"><img src="https://img.shields.io/badge/CacheerPHP-%5E6.0-f2b93c?style=for-the-badge" alt="CacheerPHP"/></a>
 </p>
 
 ---
