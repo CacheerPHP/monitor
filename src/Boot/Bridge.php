@@ -67,8 +67,8 @@ final class Bridge
             self::UNSUPPORTED_CACHEER => 'The installed silviooosilva/cacheer-php has no '
                 . 'Observability\\Telemetry, so there is nothing to hook. The monitor needs '
                 . 'CacheerPHP 6. Run: composer why silviooosilva/cacheer-php — and if it '
-                . 'resolved to v4/v5, note that 6.0 is not tagged yet, so the constraint '
-                . 'must allow the dev branch ("^6.0@dev").',
+                . 'resolved to v4/v5, note that 6.0 is still a pre-release, so a plain '
+                . '"^6.0" will not match it; the constraint needs "^6.0@RC".',
             self::ALREADY_BOOTED => 'Bridge already booted earlier in this process.'
                 . (self::$detail !== null ? ' ' . self::$detail : ''),
             default => 'Bridge never ran. Composer did not load src/Boot/bootstrap.php — '
