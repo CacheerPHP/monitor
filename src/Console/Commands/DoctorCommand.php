@@ -54,6 +54,33 @@ final class DoctorCommand
             fwrite(STDOUT, "    note: file does not exist yet — it is created on the first cache operation\n");
         }
 
+        // The default lands in the system temp directory, which is easy to lose
+        // track of and is cleared by the OS. "The dashboard shows nothing" is
+        // usually this, so say it plainly rather than only printing the path.
+        if (str_starts_with($path, sys_get_temp_dir() . DIRECTORY_SEPARATOR)) {
+            fwrite(STDOUT, "    note: this is the system temp directory, the fallback when"
+                . " CACHEER_MONITOR_EVENTS is unset.\n"
+                . "          Set it to a path inside your project to keep events across reboots.\n");
+        }
+
+        // A live event count turns "is it working?" into an observation.
+        if (is_file($path)) {
+            $lines = 0;
+            $handle = @fopen($path, 'rb');
+            if ($handle !== false) {
+                while (fgets($handle) !== false) {
+                    $lines++;
+                }
+                fclose($handle);
+            }
+            fwrite(STDOUT, sprintf("    %d event%s recorded so far\n", $lines, $lines === 1 ? '' : 's'));
+            if ($lines === 0) {
+                fwrite(STDOUT, "          Nothing yet. Run some cache operations, and check nothing"
+                    . " called Telemetry::reset()\n          after autoload — that drops the"
+                    . " auto-registered listener.\n");
+            }
+        }
+
         // 5. Value capture is off by default; say so, since a missing preview
         //    otherwise looks like a bug.
         $capture = Env::getBool('CACHEER_MONITOR_CAPTURE_VALUES');
