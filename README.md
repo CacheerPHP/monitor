@@ -182,6 +182,7 @@ All configuration is via **environment variables** (OS env or `.env` file in you
 | `CACHEER_MONITOR_CAPTURE_VALUES` | `false` | Enable value preview capture in events |
 | `CACHEER_MONITOR_AUTO_REGISTER` | `true` | Set to `false` to stop the autoload bridge registering a listener, so you can wire one yourself |
 | `CACHEER_MONITOR_STREAM_TIMEOUT` | `30` | SSE stream connection timeout (seconds) |
+| `CACHEER_MONITOR_WORKERS` | `4` | Server worker processes; the live stream holds one for its whole timeout (Unix only) |
 | `CACHEER_MONITOR_PREVIEW_BYTES` | `2048` | Max bytes for value preview JSON |
 | `CACHEER_MONITOR_REDACT_KEYS` | *(empty)* | Comma-separated list of additional keys to redact in previews |
 
@@ -204,6 +205,7 @@ vendor/bin/cacheer-monitor serve [options]
 | `--host=` | `127.0.0.1` | Host to bind to |
 | `--port=` | `9966` | Port to listen on |
 | `--events=` | *(auto-resolved)* | Explicit path to the JSONL events file |
+| `--workers=` | `4` | Server worker processes; keeps the dashboard responsive while the live stream is open (Unix only) |
 | `--quiet` | — | Suppress request logging |
 
 ```bash

@@ -68,6 +68,7 @@ final class Application
             'port' => 9966,
             'events' => null,
             'quiet' => false,
+            'workers' => null,
         ];
         foreach ($args as $arg) {
             if (str_starts_with($arg, '--host=')) {
@@ -76,6 +77,8 @@ final class Application
                 $options['port'] = (int) substr($arg, 7);
             } elseif (str_starts_with($arg, '--events=')) {
                 $options['events'] = substr($arg, 9);
+            } elseif (str_starts_with($arg, '--workers=')) {
+                $options['workers'] = substr($arg, 10);
             } elseif ($arg === '--quiet') {
                 $options['quiet'] = true;
             } elseif (str_starts_with($arg, '--quiet=')) {
@@ -101,6 +104,8 @@ final class Application
         echo "  --host=127.0.0.1  Bind address (default 127.0.0.1)\n";
         echo "  --port=9966       Port (default 9966)\n";
         echo "  --events=/path    JSONL events file path (default system temp or .env)\n";
+        echo "  --workers=4       Server worker processes; more keeps the dashboard\n";
+        echo "                    responsive while the live stream is open (Unix only)\n";
         echo "  --quiet           Suppress server startup logs\n\n";
     }
 }

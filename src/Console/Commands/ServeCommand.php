@@ -11,6 +11,9 @@ use Cacheer\Monitor\Support\Env;
  */
 final class ServeCommand
 {
+    /** @var int Worker processes used when the platform can fork. */
+    private const DEFAULT_WORKERS = 4;
+
     /**
      * Run the command.
      *
@@ -26,11 +29,20 @@ final class ServeCommand
         putenv('CACHEER_MONITOR_EVENTS=' . $eventsPath);
         putenv('CACHEER_AUTOLOAD=' . Env::root() . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php');
 
+        $workers = $this->determineWorkers($args['workers'] ?? null);
+        if ($workers > 1) {
+            putenv('PHP_CLI_SERVER_WORKERS=' . $workers);
+        }
+
         $commandLine = $this->serverCmd($host, $port);
         if (!$quiet) {
             fwrite(STDOUT, "Cacheer Monitor starting...\n");
             fwrite(STDOUT, "- Events file: {$eventsPath}\n");
-            fwrite(STDOUT, "- URL: http://{$host}:{$port}\n\n");
+            fwrite(STDOUT, "- URL: http://{$host}:{$port}\n");
+            fwrite(STDOUT, $workers > 1
+                ? "- Workers: {$workers}\n\n"
+                : "- Workers: 1 (the live stream will block other requests;"
+                    . " concurrent workers are unavailable on this platform)\n\n");
         }
 
         $descriptorStdout = $quiet ? ['file', $this->nullDevice(), 'w'] : STDOUT;
@@ -57,6 +69,27 @@ final class ServeCommand
         $docRoot = $this->packageRoot() . '/public';
         $router  = $this->packageRoot() . '/server/router.php';
         return sprintf('php -S %s:%d -t %s %s', escapeshellarg($host), $port, escapeshellarg($docRoot), escapeshellarg($router));
+    }
+
+    /**
+     * Resolve how many worker processes the built-in server should fork.
+     *
+     * The built-in server is single-process by default, so one open SSE stream
+     * occupies it for the whole timeout and every other request queues behind
+     * it. Forking workers keeps the dashboard responsive while a stream is held
+     * open. Windows has no fork, so it stays single-process there.
+     *
+     * @param string|null $opt
+     * @return int Worker count, or 1 when concurrency is unavailable
+     */
+    private function determineWorkers(?string $opt): int
+    {
+        if (DIRECTORY_SEPARATOR === '\\') {
+            return 1;
+        }
+        $value = $opt ?? Env::get('CACHEER_MONITOR_WORKERS');
+        $workers = ($value === null || $value === '') ? self::DEFAULT_WORKERS : (int) $value;
+        return max(1, min($workers, 32));
     }
 
     /**
