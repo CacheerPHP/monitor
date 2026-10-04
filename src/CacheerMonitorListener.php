@@ -44,7 +44,7 @@ final class CacheerMonitorListener implements EventDispatcher
         ];
 
         if ($event->error !== null) {
-            $payload['error'] = $event->error->getMessage();
+            $payload['error'] = self::redact($event->error->getMessage());
         }
 
         if ($event->hasValue) {
@@ -62,6 +62,18 @@ final class CacheerMonitorListener implements EventDispatcher
      * core hit/miss/put/clear/flush/error names match v5 so existing dashboards
      * keep working; v6-specific kinds pass through with descriptive names.
      */
+    /**
+     * Backend errors can embed connection details. Events are written to disk
+     * and served on the dashboard, so credentials in a URI or a key=value pair
+     * are masked before they leave the process.
+     */
+    private static function redact(string $message): string
+    {
+        $message = (string) preg_replace('#(\b[a-z][a-z0-9+.-]*://)[^/\s@]*@#i', '$1***@', $message);
+
+        return (string) preg_replace('/\b(password|passwd|pwd|pass|secret|token|auth)\s*[=:]\s*("[^"]*"|\'[^\']*\'|[^\s;,&)\]]+)/i', '$1=***', $message);
+    }
+
     private function typeName(CacheEventType $type): string
     {
         return match ($type) {
