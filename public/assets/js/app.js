@@ -1,4 +1,5 @@
 // Cacheer Monitor — application entry point
+import { icon } from "./icons.js";
 import {
   fetchConfig,
   fetchMetrics,
@@ -42,6 +43,10 @@ const AppState = {
   inspectorNamespace: null,
   inspectorLoading: false,
   hitRateThreshold: 0.5, // alert when hit rate drops below this
+  lastMetrics: null,
+  lastEvents: [],
+  inspectorRequest: 0,
+  inspectorReturnFocus: null,
 };
 
 const el = (id) => document.getElementById(id);
@@ -53,11 +58,12 @@ function getNamespaceFilter() {
 // [ theme ]
 
 function syncThemeIcon() {
-  const icon = el("themeIcon");
+  const themeIcon = el("themeIcon");
   const isDark = document.documentElement.classList.contains("dark");
-  if (icon) {
-    icon.className = isDark ? "fa-solid fa-sun text-xs" : "fa-solid fa-moon text-xs";
+  if (themeIcon) {
+    themeIcon.innerHTML = icon(isDark ? "sun" : "moon");
   }
+  el("btnThemeToggle")?.setAttribute("aria-label", isDark ? "Switch to light theme" : "Switch to dark theme");
 }
 
 function toggleTheme() {
@@ -69,6 +75,10 @@ function toggleTheme() {
     localStorage.setItem("cacheer-theme", toDark ? "dark" : "light");
   } catch (_) {}
   syncThemeIcon();
+  if (AppState.lastMetrics) {
+    renderMetrics(AppState.lastMetrics);
+    updateTimelines(AppState.lastEvents);
+  }
 }
 
 // [ loading ]
@@ -101,15 +111,8 @@ function setTimeRange(windowMinutes) {
 
   document.querySelectorAll("[data-time-range]").forEach((btn) => {
     const isActive = btn.dataset.timeRange === String(windowMinutes);
-    // Support both legacy class-toggle and new "active" pill approach
     btn.classList.toggle("active", isActive);
-    btn.classList.toggle("bg-blue-600", isActive);
-    btn.classList.toggle("text-white", isActive);
-    btn.classList.toggle("border-blue-600", isActive);
-    btn.classList.toggle("bg-white", !isActive);
-    btn.classList.toggle("dark:bg-slate-800", !isActive);
-    btn.classList.toggle("text-slate-600", !isActive);
-    btn.classList.toggle("dark:text-slate-300", !isActive);
+    btn.setAttribute("aria-pressed", String(isActive));
   });
 
   loadAndRenderSnapshot();
@@ -140,6 +143,15 @@ function renderDrivers(metrics) {
 
   const canvas = el("driversChart");
   if (canvas?.getContext) {
+    canvas.setAttribute(
+      "aria-label",
+      Object.keys(driversMap).length
+        ? "Events by storage driver: " +
+            Object.entries(driversMap)
+              .map(([name, count]) => `${name}: ${count}`)
+              .join(", ")
+        : "No storage driver activity recorded",
+    );
     AppState.driversChartInstance?.destroy();
     AppState.driversChartInstance = createDriversDoughnutChart(
       canvas.getContext("2d"),
@@ -156,15 +168,16 @@ function renderTtlChart(metrics) {
   }
 
   const { labels, values } = ttlDistributionChartData(metrics?.ttl_distribution || {});
-  if (values.reduce((s, v) => s + v, 0) === 0) {
-    return;
-  }
-
+  canvas.setAttribute(
+    "aria-label",
+    "Write expiry distribution: " + labels.map((label, index) => `${label}: ${values[index]}`).join(", "),
+  );
   AppState.ttlChartInstance?.destroy();
-  AppState.ttlChartInstance = createBarChart(canvas.getContext("2d"), labels, values, "#8b5cf6");
+  AppState.ttlChartInstance = createBarChart(canvas.getContext("2d"), labels, values);
 }
 
 function renderMetrics(metrics) {
+  AppState.lastMetrics = metrics;
   updateMetricCards(metrics);
   updateHitRateAlert(metrics, AppState.hitRateThreshold);
   renderDrivers(metrics);
@@ -183,6 +196,7 @@ function renderMetrics(metrics) {
 }
 
 function renderEvents(events) {
+  AppState.lastEvents = events;
   const namespaceFilter = getNamespaceFilter();
   const selectedType = String(el("typeFilter")?.value || "");
   const filterText = String(el("filterKey")?.value || "").toLowerCase();
@@ -200,14 +214,10 @@ function renderEvents(events) {
   const eventsEl = el("events");
   if (eventsEl) {
     const hasFilters = Boolean(selectedType || filterText || namespaceFilter || AppState.timeFrom !== null);
-    const emptyTitle =
-      events.length === 0 ? "No events yet" : hasFilters ? "No events match current filters" : "No events available";
-    const emptyDetail =
-      events.length === 0
-        ? "Events will appear here as they stream in"
-        : hasFilters
-          ? "Try clearing key, type, namespace, or time-range filters."
-          : "No recent events were returned for the selected limit.";
+    const emptyTitle = hasFilters ? "No events match current filters" : "No events yet";
+    const emptyDetail = hasFilters
+      ? "Try clearing key, type, namespace, or time-range filters."
+      : "Run your application to see cache operations here. Check the event source below if you expected activity.";
     renderEventsStream(eventsEl, filtered, openKeyInspector, { emptyTitle, emptyDetail });
   }
 
@@ -319,24 +329,10 @@ function updateTimelines(allEvents) {
         {
           label: "Hits",
           data: hits,
-          borderColor: "#10b981",
-          backgroundColor: "rgba(16,185,129,0.1)",
-          fill: true,
-          tension: 0.3,
-          spanGaps: true,
-          pointRadius: 0,
-          pointHoverRadius: 4,
         },
         {
           label: "Misses",
           data: misses,
-          borderColor: "#ef4444",
-          backgroundColor: "rgba(239,68,68,0.1)",
-          fill: true,
-          tension: 0.3,
-          spanGaps: true,
-          pointRadius: 0,
-          pointHoverRadius: 4,
         },
       ]);
     }
@@ -351,13 +347,6 @@ function updateTimelines(allEvents) {
           {
             label: "Avg Latency (ms)",
             data: avgLatency,
-            borderColor: "#8b5cf6",
-            backgroundColor: "rgba(139,92,246,0.1)",
-            fill: true,
-            tension: 0.3,
-            spanGaps: true,
-            pointRadius: 0,
-            pointHoverRadius: 4,
           },
         ],
         { scales: { y: { beginAtZero: true } } },
@@ -373,6 +362,7 @@ async function openKeyInspector(key, namespace = null) {
 }
 
 async function loadKeyInspector(key, namespace = null, forceLive = false) {
+  const request = ++AppState.inspectorRequest;
   AppState.inspectorKey = key;
   AppState.inspectorNamespace = namespace;
   AppState.inspectorLoading = true;
@@ -387,8 +377,21 @@ async function loadKeyInspector(key, namespace = null, forceLive = false) {
     return;
   }
 
-  panel.classList.remove("translate-x-full");
-  panel.classList.add("translate-x-0");
+  if (!panel.classList.contains("is-open")) {
+    AppState.inspectorReturnFocus = document.activeElement;
+  }
+  panel.inert = false;
+  panel.setAttribute("aria-hidden", "false");
+  panel.classList.add("is-open");
+  el("inspectorBackdrop")?.classList.remove("hidden");
+  document.body.classList.add("inspector-open");
+  requestAnimationFrame(() => {
+    if (request === AppState.inspectorRequest && panel.classList.contains("is-open")) {
+      el("btnCloseInspector")?.focus();
+    }
+  });
+  document.querySelector(".workspace").inert = true;
+  document.querySelector(".sidebar").inert = true;
 
   const titleEl = el("inspectorTitle");
   if (titleEl) {
@@ -401,35 +404,53 @@ async function loadKeyInspector(key, namespace = null, forceLive = false) {
   if (refreshBtn) {
     refreshBtn.disabled = true;
   }
-  refreshIcon?.classList.add("fa-spin");
+  refreshIcon?.classList.add("spinning");
 
   try {
     const data = await fetchKeyInspect(key, namespace, 100, forceLive);
+    if (request !== AppState.inspectorRequest) {
+      return;
+    }
     loader?.classList.add("hidden");
     if (body) {
       renderKeyInspector(body, data);
     }
   } catch (_) {
+    if (request !== AppState.inspectorRequest) {
+      return;
+    }
     loader?.classList.add("hidden");
     if (body) {
-      body.innerHTML =
-        '<div class="text-center text-rose-500 text-sm py-8"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Failed to load key data</div>';
+      body.innerHTML = `<div class="inspector-error">${icon("alert")} Unable to load key details. Try refreshing the inspector.</div>`;
     }
   } finally {
-    AppState.inspectorLoading = false;
-    if (refreshBtn) {
-      refreshBtn.disabled = false;
+    if (request === AppState.inspectorRequest) {
+      AppState.inspectorLoading = false;
+      if (refreshBtn) {
+        refreshBtn.disabled = false;
+      }
+      refreshIcon?.classList.remove("spinning");
     }
-    refreshIcon?.classList.remove("fa-spin");
   }
 }
 
 function closeKeyInspector() {
   const panel = el("inspectorPanel");
   if (panel) {
-    panel.classList.add("translate-x-full");
-    panel.classList.remove("translate-x-0");
+    panel.classList.remove("is-open");
+    panel.inert = true;
+    panel.setAttribute("aria-hidden", "true");
   }
+  el("inspectorBackdrop")?.classList.add("hidden");
+  document.body.classList.remove("inspector-open");
+  document.querySelector(".workspace").inert = false;
+  document.querySelector(".sidebar").inert = false;
+  if (AppState.inspectorReturnFocus?.isConnected) {
+    AppState.inspectorReturnFocus.focus();
+  } else {
+    el("mainContent")?.focus();
+  }
+  AppState.inspectorRequest++;
   AppState.inspectorKey = null;
   AppState.inspectorNamespace = null;
   AppState.inspectorLoading = false;
@@ -482,8 +503,8 @@ function setupEventListeners() {
   // [ refresh ]
   el("btnRefresh")?.addEventListener("click", () => {
     const icon = el("refreshIcon");
-    icon?.classList.add("fa-spin");
-    setTimeout(() => icon?.classList.remove("fa-spin"), 800);
+    icon?.classList.add("spinning");
+    setTimeout(() => icon?.classList.remove("spinning"), 800);
     loadAndRenderSnapshot();
   });
 
@@ -534,9 +555,9 @@ function setupEventListeners() {
     const path = el("eventsFile")?.textContent || "";
     try {
       await navigator.clipboard.writeText(path);
-      el("copyPath").innerHTML = '<i class="fa-solid fa-check"></i> Copied';
+      el("copyPath").innerHTML = icon("check") + " Copied";
       setTimeout(() => {
-        el("copyPath").innerHTML = '<i class="fa-regular fa-copy"></i> Copy';
+        el("copyPath").innerHTML = icon("copy") + " Copy";
       }, 1500);
     } catch (_) {}
   });
@@ -558,7 +579,9 @@ function setupEventListeners() {
   if (thresholdInput) {
     thresholdInput.value = String(Math.round(AppState.hitRateThreshold * 100));
     thresholdInput.addEventListener("change", () => {
-      const v = Math.min(100, Math.max(0, Number(thresholdInput.value) || 50));
+      const entered = Number(thresholdInput.value);
+      const v = Math.min(100, Math.max(0, Number.isFinite(entered) ? entered : 50));
+      thresholdInput.value = String(v);
       AppState.hitRateThreshold = v / 100;
       loadAndRenderMetrics();
     });
@@ -576,6 +599,23 @@ function setupEventListeners() {
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && AppState.inspectorKey !== null) {
       closeKeyInspector();
+    }
+    if (e.key === "Tab" && AppState.inspectorKey !== null) {
+      const controls = [
+        ...el("inspectorPanel").querySelectorAll("button:not(:disabled), a[href], input, select, [tabindex='0']"),
+      ];
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (!el("inspectorPanel").contains(document.activeElement)) {
+        e.preventDefault();
+        first?.focus();
+      } else if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last?.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first?.focus();
+      }
     }
   });
 }

@@ -1,12 +1,10 @@
-// Synchronous theme init — runs before any rendering to prevent FOUC
+// Apply the saved preference before the first paint.
 (function () {
-  var saved = null;
+  let preference = null;
   try {
-    saved = localStorage.getItem("cacheer-theme");
+    preference = localStorage.getItem("cacheer-theme");
   } catch (_) {}
-  if (saved === "light") {
-    document.documentElement.classList.remove("dark");
-  } else {
-    document.documentElement.classList.add("dark");
-  }
+  const dark =
+    preference === "dark" || (preference !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.classList.toggle("dark", dark);
 })();

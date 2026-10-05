@@ -1,755 +1,522 @@
 <!doctype html>
-<html lang="en" class="h-full">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Cacheer Monitor</title>
+    <meta
+      name="description"
+      content="Cacheer Monitor — a clear view of your cache. Live operations, latency, and key inspection for CacheerPHP." />
+    <meta name="theme-color" content="#111b26" />
+    <title>Cacheer Monitor — Cache telemetry</title>
+    <link rel="icon" href="assets/art/favicon.svg" type="image/svg+xml" />
     <script src="assets/js/theme-init.js"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
-      rel="stylesheet" />
-    <link type="text/css" rel="stylesheet" href="assets/css/style.css" />
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="assets/js/tailwind-config.js"></script>
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
-      referrerpolicy="no-referrer" />
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preload" href="assets/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="assets/css/style.css" />
+    <script defer src="assets/vendor/chart.umd.min.js"></script>
   </head>
-
-  <body
-    class="h-full dark:bg-[#06091a] text-slate-800 dark:text-slate-100 overflow-x-hidden transition-colors duration-300">
-    <!-- Skip to content (keyboard / screen-reader users) -->
+  <body>
     <a href="#mainContent" class="skip-link">Skip to content</a>
-    <!-- ═══════════════════════════════════════════════ -->
-    <!-- Animated Background                             -->
-    <!-- ═══════════════════════════════════════════════ -->
-    <div class="fixed inset-0 -z-10 overflow-hidden pointer-events-none" aria-hidden="true">
-      <div class="bg-orb bg-orb-1 dark:opacity-100 opacity-0 transition-opacity duration-500"></div>
-      <div class="bg-orb bg-orb-2 dark:opacity-100 opacity-0 transition-opacity duration-500"></div>
-      <div class="bg-orb bg-orb-3 dark:opacity-100 opacity-0 transition-opacity duration-500"></div>
-      <div class="dot-grid absolute inset-0"></div>
-    </div>
+    <div id="activityBar" class="activity-bar" aria-hidden="true"><span></span></div>
 
-    <!-- ═══════════════════════════════════════════════ -->
-    <!-- Activity Pulse Bar                              -->
-    <!-- ═══════════════════════════════════════════════ -->
-    <div id="activityBar" class="activity-bar fixed top-0 left-0 right-0 h-[2px] z-50 overflow-hidden">
-      <div class="activity-inner h-full w-1/3 bg-gradient-to-r from-transparent via-blue-500 to-transparent"></div>
-    </div>
+    <aside class="sidebar" aria-label="Monitor workspace">
+      <a class="brand" href="#metricsSection" aria-label="Cacheer Monitor home">
+        <img class="logo-dark" src="assets/art/logo.svg" width="180" height="48" alt="Cacheer Monitor" />
+        <img class="logo-light" src="assets/art/logo-light.svg" width="180" height="48" alt="Cacheer Monitor" />
+      </a>
+      <div class="workspace-label">
+        <span class="workspace-dot"></span>
+        Cache telemetry
+        <span class="version-label">2.x</span>
+      </div>
+      <span class="nav-label">WORKSPACE</span>
+      <nav class="side-nav" aria-label="Section navigation">
+        <a href="#metricsSection" class="active" aria-current="location">
+          <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#overview"></use></svg>
+          <span>Overview</span>
+          <span class="nav-index">01</span>
+        </a>
+        <a href="#chartsSection">
+          <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#pulse"></use></svg>
+          <span>Performance</span>
+          <span class="nav-index">02</span>
+        </a>
+        <a href="#eventsSection">
+          <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#events"></use></svg>
+          <span>Event stream</span>
+          <span class="nav-index">03</span>
+        </a>
+        <a href="#deepDiveSection">
+          <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#layers"></use></svg>
+          <span>Cache explorer</span>
+          <span class="nav-index">04</span>
+        </a>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="sidebar-note">
+          <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#pulse"></use></svg>
+          <p>
+            A clear view
+            <br />
+            <strong>of your cache.</strong>
+          </p>
+        </div>
+        <a
+          class="docs-link"
+          href="https://cacheerphp.com/docs/v6/en/cacheer-monitor/"
+          target="_blank"
+          rel="noopener noreferrer">
+          Documentation
+          <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#external"></use></svg>
+        </a>
+        <a class="family-link" href="https://cacheerphp.com/" target="_blank" rel="noopener noreferrer">
+          Part of the CacheerPHP ecosystem
+        </a>
+      </div>
+    </aside>
 
-    <!-- ═══════════════════════════════════════════════ -->
-    <!-- Floating Sidebar Nav (desktop)                    -->
-    <!-- ═══════════════════════════════════════════════ -->
-    <nav
-      aria-label="Section navigation"
-      class="side-nav hidden xl:flex fixed left-3 top-1/2 -translate-y-1/2 z-20 flex-col gap-1 p-1.5 rounded-2xl glass shadow-lg">
-      <a
-        href="#metricsSection"
-        class="group relative flex items-center justify-center w-9 h-9 rounded-xl transition-all"
-        title="Metrics"
-        aria-label="Jump to Metrics">
-        <i
-          aria-hidden="true"
-          class="fa-solid fa-chart-pie text-slate-500 dark:text-slate-500 group-hover:text-blue-400 text-xs transition-colors"></i>
-      </a>
-      <a
-        href="#chartsSection"
-        class="group relative flex items-center justify-center w-9 h-9 rounded-xl transition-all"
-        title="Timeline"
-        aria-label="Jump to Timeline Insights">
-        <i
-          aria-hidden="true"
-          class="fa-solid fa-chart-line text-slate-500 dark:text-slate-500 group-hover:text-violet-400 text-xs transition-colors"></i>
-      </a>
-      <a
-        href="#eventsSection"
-        class="group relative flex items-center justify-center w-9 h-9 rounded-xl transition-all"
-        title="Events"
-        aria-label="Jump to Recent Events">
-        <i
-          aria-hidden="true"
-          class="fa-solid fa-list-ul text-slate-500 dark:text-slate-500 group-hover:text-cyan-400 text-xs transition-colors"></i>
-      </a>
-      <a
-        href="#deepDiveSection"
-        class="group relative flex items-center justify-center w-9 h-9 rounded-xl transition-all"
-        title="Deep Dive"
-        aria-label="Jump to Deep Dive">
-        <i
-          aria-hidden="true"
-          class="fa-solid fa-layer-group text-slate-500 dark:text-slate-500 group-hover:text-amber-400 text-xs transition-colors"></i>
-      </a>
-    </nav>
-
-    <div class="min-h-full flex flex-col">
-      <!-- ═══════════════════════════════════════════════ -->
-      <!-- Top Bar                                          -->
-      <!-- ═══════════════════════════════════════════════ -->
-      <header class="sticky top-0 z-30 glass shadow-sm">
-        <div
-          class="max-w-[1440px] mx-auto px-4 sm:px-6 xl:pl-16 py-3 flex flex-col lg:flex-row items-start lg:items-center justify-between min-w-0 gap-y-2">
-          <!-- Left: brand -->
-          <div class="flex items-center gap-3 min-w-0">
-            <div
-              class="relative flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-600 shadow-md shadow-blue-500/20">
-              <i class="fa-solid fa-gauge-high text-white text-sm"></i>
-            </div>
-            <div class="flex flex-col">
-              <h1 class="font-bold text-base tracking-tight leading-tight">Cacheer Monitor</h1>
-              <span id="statusDot" class="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-500">
-                <span class="w-1.5 h-1.5 rounded-full bg-slate-400 status-pulse" id="statusIndicator"></span>
-                <span id="lastUpdated">--</span>
-              </span>
-            </div>
-          </div>
-
-          <!-- Right: controls -->
-          <div class="flex items-center gap-2 w-full lg:w-auto justify-start lg:justify-end shrink-0 flex-wrap">
-            <select
-              id="refreshRate"
-              class="ctrl-input"
-              title="Auto refresh interval"
-              aria-label="Auto refresh interval">
-              <option value="off">Off</option>
-              <option value="1000">1s</option>
-              <option value="2000">2s</option>
-              <option value="5000" selected>5s</option>
-              <option value="10000">10s</option>
-            </select>
-            <button
-              id="btnThemeToggle"
-              class="theme-toggle w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200/20 dark:border-white/[0.06] hover:bg-white/10 dark:hover:bg-white/[0.06] text-slate-500 dark:text-slate-400 transition-colors"
-              title="Toggle theme"
-              aria-label="Toggle light/dark theme">
-              <i id="themeIcon" aria-hidden="true" class="fa-solid fa-moon text-xs"></i>
-            </button>
-            <a
-              href="https://cacheerphp.com/docs/v5/en/cacheer-monitor/quick-start/"
-              class="hidden md:inline-flex btn-ghost"
-              title="Docs"
-              target="_blank"
-              rel="noopener">
-              <i class="fa-regular fa-circle-question"></i>
-              Docs
-            </a>
-            <button
-              id="btnRefresh"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 active:from-blue-700 active:to-blue-600 text-white text-xs font-medium shadow-md shadow-blue-500/20 transition-all">
-              <i class="fa-solid fa-rotate" id="refreshIcon"></i>
-              Refresh
-            </button>
-            <button
-              id="btnClear"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-300/30 dark:border-rose-500/20 text-rose-500 dark:text-rose-400 hover:bg-rose-500/10 text-xs font-medium transition-colors">
-              <i class="fa-regular fa-trash-can"></i>
-              Clear
-            </button>
-          </div>
+    <div class="workspace">
+      <header class="topbar">
+        <div class="breadcrumb">
+          <span>Workspace</span>
+          <span aria-hidden="true">/</span>
+          <strong>Cache telemetry</strong>
+        </div>
+        <div class="topbar-actions">
+          <span id="statusDot" class="connection-status" role="status">
+            <span id="statusIndicator" class="status-dot"></span>
+            <span id="connectionLabel">Connecting</span>
+          </span>
+          <span class="topbar-divider" aria-hidden="true"></span>
+          <button id="btnThemeToggle" class="icon-button" aria-label="Switch to light theme" title="Switch theme">
+            <span id="themeIcon">
+              <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#sun"></use></svg>
+            </span>
+          </button>
         </div>
       </header>
 
-      <main
-        id="mainContent"
-        tabindex="-1"
-        class="max-w-[1440px] mx-auto w-full px-4 sm:px-6 xl:pl-16 py-6 space-y-5 min-w-0 flex-1">
-        <!-- ── Hit-rate alert ── -->
-        <div
-          id="hitRateAlert"
-          class="hidden flex items-center gap-3 px-4 py-3 rounded-xl border border-amber-400/30 dark:border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300 text-sm font-medium backdrop-blur-sm"></div>
-
-        <!-- ── Config / filter bar ── -->
-        <div class="flex flex-col md:flex-row md:items-center gap-2 text-xs min-w-0 px-1">
-          <div class="flex items-center gap-2 min-w-0 text-slate-500 dark:text-slate-500">
-            <i class="fa-regular fa-file-lines text-[10px]"></i>
-            <span id="eventsFile" class="font-mono truncate max-w-xs lg:max-w-lg text-[11px]">--</span>
-            <button
-              id="copyPath"
-              class="hidden lg:inline-flex btn-ghost text-[10px]"
-              title="Copy events file path"
-              aria-label="Copy events file path">
-              <i class="fa-regular fa-copy"></i>
-              Copy
-            </button>
-            <span
-              id="origin"
-              class="px-2 py-0.5 rounded-md bg-white/[0.04] dark:bg-white/[0.04] border border-white/[0.04] text-slate-500 dark:text-slate-500 font-medium text-[11px]">
-              origin: --
-            </span>
-          </div>
-          <div class="grow"></div>
-          <div class="flex items-center gap-3 text-slate-500 dark:text-slate-500 flex-wrap">
-            <span id="since" class="text-[11px]">
-              <i class="fa-regular fa-clock mr-1"></i>
-              since: --
-            </span>
-
-            <!-- Time-range filter -->
-            <div
-              class="flex items-center gap-0.5 rounded-lg overflow-hidden p-0.5 bg-white/[0.03] dark:bg-white/[0.03] border border-white/[0.04] dark:border-white/[0.04]">
-              <button data-time-range="5" class="time-pill">5m</button>
-              <button data-time-range="15" class="time-pill">15m</button>
-              <button data-time-range="60" class="time-pill">1h</button>
-              <button data-time-range="360" class="time-pill">6h</button>
-              <button data-time-range="1440" class="time-pill">24h</button>
-              <button data-time-range="null" class="time-pill active">All</button>
+      <main id="mainContent" tabindex="-1">
+        <section id="metricsSection" aria-labelledby="overviewTitle">
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">OBSERVE. UNDERSTAND. OPTIMIZE.</p>
+              <h1 id="overviewTitle">
+                Cache overview
+                <span class="heading-period">.</span>
+              </h1>
+              <p class="page-description">The signal behind your application's speed.</p>
             </div>
-
-            <!-- Namespace filter -->
-            <div class="flex items-center gap-1.5">
-              <label for="nsFilter" class="text-slate-500 dark:text-slate-600 text-[11px]">ns:</label>
-              <input id="nsFilter" placeholder="namespace" class="ctrl-input w-28" aria-label="Filter by namespace" />
-            </div>
-
-            <!-- Hit-rate threshold -->
-            <div class="flex items-center gap-1.5" title="Alert when hit rate drops below this %">
-              <i class="fa-solid fa-bell text-amber-400/70 text-[11px]"></i>
-              <input
-                id="hitRateThreshold"
-                type="number"
-                min="0"
-                max="100"
-                value="50"
-                aria-label="Hit rate alert threshold (percent)"
-                class="ctrl-input w-14 tabular-nums" />
-              <span class="text-slate-500 dark:text-slate-600 text-[11px]">%</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- ── Loading overlay ── -->
-        <div id="loadingState" class="hidden">
-          <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <div class="skeleton h-44 rounded-xl col-span-2 row-span-2"></div>
-            <div class="skeleton h-20 rounded-xl"></div>
-            <div class="skeleton h-20 rounded-xl"></div>
-            <div class="skeleton h-20 rounded-xl"></div>
-            <div class="skeleton h-20 rounded-xl"></div>
-            <div class="skeleton h-20 rounded-xl"></div>
-            <div class="skeleton h-20 rounded-xl"></div>
-            <div class="skeleton h-20 rounded-xl"></div>
-            <div class="skeleton h-20 rounded-xl"></div>
-          </section>
-        </div>
-
-        <!-- ═══════════════════════════════════════════════ -->
-        <!-- Metrics Bento Grid                               -->
-        <!-- ═══════════════════════════════════════════════ -->
-        <section id="statsGrid">
-          <div id="metricsSection" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <!-- ── HERO: Hit Rate Gauge ── -->
-            <div
-              class="glass-card glow-indigo col-span-2 row-span-2 p-6 flex flex-col items-center justify-center relative overflow-hidden">
-              <!-- Subtle gradient accent -->
-              <div
-                class="absolute inset-0 bg-gradient-to-br from-indigo-500/[0.04] via-transparent to-blue-500/[0.04] pointer-events-none"></div>
-              <div class="relative">
-                <svg class="w-36 h-36" viewBox="0 0 140 140" aria-hidden="true" focusable="false">
-                  <defs>
-                    <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stop-color="#6366f1" />
-                      <stop offset="50%" stop-color="#3b82f6" />
-                      <stop offset="100%" stop-color="#06b6d4" />
-                    </linearGradient>
-                  </defs>
-                  <!-- Track -->
-                  <circle
-                    cx="70"
-                    cy="70"
-                    r="58"
-                    fill="none"
-                    stroke="currentColor"
-                    class="text-slate-200/10 dark:text-white/[0.04]"
-                    stroke-width="10" />
-                  <!-- Progress -->
-                  <circle
-                    id="gaugeRing"
-                    cx="70"
-                    cy="70"
-                    r="58"
-                    fill="none"
-                    stroke="url(#gaugeGradient)"
-                    stroke-width="10"
-                    stroke-linecap="round"
-                    stroke-dasharray="364.42"
-                    stroke-dashoffset="364.42"
-                    transform="rotate(-90 70 70)" />
+            <div class="heading-actions">
+              <label class="refresh-control" for="refreshRate">
+                <span>Refresh</span>
+                <select id="refreshRate">
+                  <option value="off">Manual</option>
+                  <option value="1000">Every 1s</option>
+                  <option value="2000">Every 2s</option>
+                  <option value="5000" selected>Every 5s</option>
+                  <option value="10000">Every 10s</option>
+                </select>
+              </label>
+              <button id="btnRefresh" class="button button-primary">
+                <svg id="refreshIcon" class="icon" aria-hidden="true">
+                  <use href="assets/art/icons.svg#refresh"></use>
                 </svg>
-                <div class="absolute inset-0 flex flex-col items-center justify-center">
-                  <div
-                    id="hit_rate"
-                    class="metric-value text-2xl font-extrabold tabular-nums text-gradient bg-gradient-to-r from-indigo-400 via-blue-400 to-cyan-400">
-                    0%
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          <div class="filter-bar" aria-label="Dashboard filters">
+            <div class="time-ranges" role="group" aria-label="Time range">
+              <button data-time-range="5" class="time-pill" aria-pressed="false">5m</button>
+              <button data-time-range="15" class="time-pill" aria-pressed="false">15m</button>
+              <button data-time-range="60" class="time-pill" aria-pressed="false">1h</button>
+              <button data-time-range="360" class="time-pill" aria-pressed="false">6h</button>
+              <button data-time-range="1440" class="time-pill" aria-pressed="false">24h</button>
+              <button data-time-range="null" class="time-pill active" aria-pressed="true">All time</button>
+            </div>
+            <label class="filter-input">
+              <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#layers"></use></svg>
+              <input id="nsFilter" placeholder="All namespaces" aria-label="Filter by namespace" />
+            </label>
+            <div class="filter-input key-search">
+              <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#search"></use></svg>
+              <input id="filterKey" placeholder="Search keys…" aria-label="Search events and top keys" />
+              <button id="clearFilter" class="icon-button small" aria-label="Clear key search" title="Clear key search">
+                <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#x"></use></svg>
+              </button>
+            </div>
+          </div>
+          <div id="hitRateAlert" class="alert-banner hidden" role="status"></div>
+          <div id="loadingState" class="loading-grid hidden" role="status" aria-label="Loading metrics">
+            <div class="skeleton"></div>
+            <div class="skeleton"></div>
+            <div class="skeleton"></div>
+          </div>
+          <div id="statsGrid">
+            <div class="summary-grid">
+              <article class="efficiency-card">
+                <div class="card-label">
+                  <span>Cache efficiency</span>
+                  <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#pulse"></use></svg>
+                </div>
+                <div class="efficiency-value" id="hit_rate">—</div>
+                <div class="efficiency-caption">
+                  <span>HIT RATE</span>
+                  <span id="lookupCount">Awaiting lookups</span>
+                </div>
+                <div
+                  class="efficiency-meter"
+                  role="meter"
+                  aria-label="Cache hit rate"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  aria-valuenow="0">
+                  <span id="hitRateFill"></span>
+                </div>
+                <div class="meter-labels">
+                  <span>0%</span>
+                  <span>50%</span>
+                  <span>100%</span>
+                </div>
+                <div class="efficiency-foot">
+                  <span id="efficiencyNote">Your cache performance at a glance.</span>
+                  <label for="hitRateThreshold">
+                    Alert below
+                    <input
+                      id="hitRateThreshold"
+                      type="number"
+                      min="0"
+                      max="100"
+                      value="50"
+                      aria-label="Hit-rate alert threshold percentage" />
+                    %
+                  </label>
+                </div>
+              </article>
+              <div class="metric-grid">
+                <article class="metric-card">
+                  <div class="card-label">
+                    <span>Cache hits</span>
+                    <span class="metric-indicator success"></span>
                   </div>
-                </div>
-              </div>
-              <div class="mt-3 flex items-center gap-2 text-xs font-semibold text-slate-400 dark:text-slate-500">
-                <i class="fa-solid fa-bullseye text-indigo-400"></i>
-                Hit Rate
-              </div>
-              <div class="mt-1 text-[11px] text-slate-400 dark:text-slate-600 tabular-nums">
-                p95:
-                <span id="lat_p95">--</span>
-                · p99:
-                <span id="lat_p99">--</span>
-              </div>
-            </div>
-
-            <!-- ── Hits ── -->
-            <div class="glass-card glow-emerald p-4 relative overflow-hidden">
-              <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-emerald-500 to-emerald-400"></div>
-              <div class="flex items-center justify-between mb-3">
-                <span class="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                  Hits
-                </span>
-                <div class="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-                  <i class="fa-solid fa-circle-check text-emerald-400 text-xs"></i>
-                </div>
-              </div>
-              <div
-                id="hits"
-                class="metric-value text-2xl font-bold tabular-nums text-gradient bg-gradient-to-r from-emerald-400 to-emerald-300">
-                0
-              </div>
-            </div>
-
-            <!-- ── Misses ── -->
-            <div class="glass-card glow-rose p-4 relative overflow-hidden">
-              <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-rose-500 to-rose-400"></div>
-              <div class="flex items-center justify-between mb-3">
-                <span class="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                  Misses
-                </span>
-                <div class="w-7 h-7 rounded-lg bg-rose-500/10 flex items-center justify-center">
-                  <i class="fa-solid fa-circle-xmark text-rose-400 text-xs"></i>
-                </div>
-              </div>
-              <div
-                id="misses"
-                class="metric-value text-2xl font-bold tabular-nums text-gradient bg-gradient-to-r from-rose-400 to-rose-300">
-                0
+                  <strong id="hits" class="metric-value">—</strong>
+                  <span class="metric-description">Served from cache</span>
+                </article>
+                <article class="metric-card">
+                  <div class="card-label">
+                    <span>Cache misses</span>
+                    <span class="metric-indicator warning"></span>
+                  </div>
+                  <strong id="misses" class="metric-value">—</strong>
+                  <span class="metric-description">Requiring computation</span>
+                </article>
+                <article class="metric-card">
+                  <div class="card-label">
+                    <span>Writes</span>
+                    <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#database"></use></svg>
+                  </div>
+                  <strong id="puts" class="metric-value">—</strong>
+                  <span class="metric-description">Values stored</span>
+                </article>
+                <article class="metric-card">
+                  <div class="card-label">
+                    <span>Average latency</span>
+                    <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#clock"></use></svg>
+                  </div>
+                  <strong id="lat_avg" class="metric-value latency-value">—</strong>
+                  <span class="metric-description">
+                    p95
+                    <span id="lat_p95">—</span>
+                    <span class="latency-separator">·</span>
+                    p99
+                    <span id="lat_p99">—</span>
+                  </span>
+                </article>
               </div>
             </div>
-
-            <!-- ── Puts ── -->
-            <div class="glass-card glow-amber p-4 relative overflow-hidden">
-              <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-amber-500 to-amber-400"></div>
-              <div class="flex items-center justify-between mb-3">
-                <span class="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                  Puts
-                </span>
-                <div class="w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center">
-                  <i class="fa-solid fa-box-archive text-amber-400 text-xs"></i>
-                </div>
-              </div>
-              <div
-                id="puts"
-                class="metric-value text-2xl font-bold tabular-nums text-gradient bg-gradient-to-r from-amber-400 to-amber-300">
-                0
-              </div>
-            </div>
-
-            <!-- ── Flushes ── -->
-            <div class="glass-card glow-sky p-4 relative overflow-hidden">
-              <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-sky-500 to-sky-400"></div>
-              <div class="flex items-center justify-between mb-3">
-                <span class="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                  Flushes
-                </span>
-                <div class="w-7 h-7 rounded-lg bg-sky-500/10 flex items-center justify-center">
-                  <i class="fa-solid fa-broom text-sky-400 text-xs"></i>
-                </div>
-              </div>
-              <div
-                id="flushes"
-                class="metric-value text-2xl font-bold tabular-nums text-gradient bg-gradient-to-r from-sky-400 to-sky-300">
-                0
-              </div>
-            </div>
-
-            <!-- ── Renews ── -->
-            <div class="glass-card glow-teal p-4 relative overflow-hidden">
-              <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-teal-500 to-teal-400"></div>
-              <div class="flex items-center justify-between mb-3">
-                <span class="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                  Renews
-                </span>
-                <div class="w-7 h-7 rounded-lg bg-teal-500/10 flex items-center justify-center">
-                  <i class="fa-solid fa-arrows-rotate text-teal-400 text-xs"></i>
-                </div>
-              </div>
-              <div
-                id="renews"
-                class="metric-value text-2xl font-bold tabular-nums text-gradient bg-gradient-to-r from-teal-400 to-teal-300">
-                0
-              </div>
-            </div>
-
-            <!-- ── Clears ── -->
-            <div class="glass-card glow-fuchsia p-4 relative overflow-hidden">
-              <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-fuchsia-500 to-fuchsia-400"></div>
-              <div class="flex items-center justify-between mb-3">
-                <span class="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                  Clears
-                </span>
-                <div class="w-7 h-7 rounded-lg bg-fuchsia-500/10 flex items-center justify-center">
-                  <i class="fa-solid fa-trash-can text-fuchsia-400 text-xs"></i>
-                </div>
-              </div>
-              <div
-                id="clears"
-                class="metric-value text-2xl font-bold tabular-nums text-gradient bg-gradient-to-r from-fuchsia-400 to-fuchsia-300">
-                0
-              </div>
-            </div>
-
-            <!-- ── Errors ── -->
-            <div class="glass-card glow-rose p-4 relative overflow-hidden">
-              <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-rose-600 to-rose-500"></div>
-              <div class="flex items-center justify-between mb-3">
-                <span class="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                  Errors
-                </span>
-                <div class="w-7 h-7 rounded-lg bg-rose-600/10 flex items-center justify-center">
-                  <i class="fa-solid fa-triangle-exclamation text-rose-500 text-xs"></i>
-                </div>
-              </div>
-              <div
-                id="errors"
-                class="metric-value text-2xl font-bold tabular-nums text-gradient bg-gradient-to-r from-rose-500 to-rose-400">
-                0
-              </div>
-            </div>
-
-            <!-- ── Avg Latency ── -->
-            <div class="glass-card glow-violet p-4 relative overflow-hidden">
-              <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-violet-500 to-violet-400"></div>
-              <div class="flex items-center justify-between mb-3">
-                <span class="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                  Avg Latency
-                </span>
-                <div class="w-7 h-7 rounded-lg bg-violet-500/10 flex items-center justify-center">
-                  <i class="fa-regular fa-clock text-violet-400 text-xs"></i>
-                </div>
-              </div>
-              <div
-                id="lat_avg"
-                class="metric-value text-2xl font-bold tabular-nums text-gradient bg-gradient-to-r from-violet-400 to-violet-300">
-                --
-              </div>
+            <div class="operations-strip">
+              <span class="strip-label">OTHER OPERATIONS</span>
+              <span>
+                Flushes
+                <strong id="flushes">—</strong>
+              </span>
+              <span>
+                Renews
+                <strong id="renews">—</strong>
+              </span>
+              <span>
+                Clears
+                <strong id="clears">—</strong>
+              </span>
+              <span class="error-stat">
+                Errors
+                <strong id="errors">—</strong>
+              </span>
+              <span id="since" class="sample-since">No recorded activity</span>
             </div>
           </div>
         </section>
 
-        <!-- ═══════════════════════════════════════════════ -->
-        <!-- Timeline Insights                                -->
-        <!-- ═══════════════════════════════════════════════ -->
-        <section id="chartsSection" class="space-y-3">
-          <details open class="group glass-card overflow-hidden">
-            <summary
-              class="flex cursor-pointer items-center justify-between text-sm font-semibold px-5 py-3.5 select-none hover:bg-white/[0.03] dark:hover:bg-white/[0.03] transition-colors [&::-webkit-details-marker]:hidden">
-              <span class="flex items-center gap-2.5">
-                <div class="w-7 h-7 rounded-lg bg-indigo-500/10 flex items-center justify-center">
-                  <i class="fa-solid fa-chart-line text-indigo-400 text-xs"></i>
-                </div>
-                <span class="text-slate-700 dark:text-slate-200">Timeline Insights</span>
-              </span>
-              <span class="text-slate-400 dark:text-slate-600 transition-transform duration-200 group-open:rotate-180">
-                <i class="fa-solid fa-chevron-down text-xs"></i>
-              </span>
-            </summary>
-            <div class="details-content">
-              <div>
-                <div class="px-5 pb-5 grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-                  <div
-                    class="p-4 rounded-xl bg-white/[0.02] dark:bg-white/[0.02] border border-white/[0.04] dark:border-white/[0.04]">
-                    <h3 class="font-semibold text-sm mb-3 text-slate-500 dark:text-slate-400">
-                      <i class="fa-solid fa-chart-area text-emerald-400 mr-2"></i>
-                      Hits vs Misses
-                      <span class="text-[11px] font-normal text-slate-500 dark:text-slate-600">(last 10 min)</span>
-                    </h3>
-                    <canvas id="chartHitsMisses" height="180" class="w-full max-w-full"></canvas>
-                  </div>
-                  <div
-                    class="p-4 rounded-xl bg-white/[0.02] dark:bg-white/[0.02] border border-white/[0.04] dark:border-white/[0.04]">
-                    <h3 class="font-semibold text-sm mb-3 text-slate-500 dark:text-slate-400">
-                      <i class="fa-solid fa-wave-square text-violet-400 mr-2"></i>
-                      Latency
-                      <span class="text-[11px] font-normal text-slate-500 dark:text-slate-600">
-                        (avg ms, last 10 min)
-                      </span>
-                    </h3>
-                    <canvas id="chartLatency" height="180" class="w-full max-w-full"></canvas>
-                  </div>
-                  <div
-                    class="p-4 rounded-xl bg-white/[0.02] dark:bg-white/[0.02] border border-white/[0.04] dark:border-white/[0.04]">
-                    <h3 class="font-semibold text-sm mb-3 text-slate-500 dark:text-slate-400">
-                      <i class="fa-solid fa-hourglass-half text-purple-400 mr-2"></i>
-                      TTL Distribution
-                      <span class="text-[11px] font-normal text-slate-500 dark:text-slate-600">(write events)</span>
-                    </h3>
-                    <canvas id="chartTtl" height="180" class="w-full max-w-full"></canvas>
-                  </div>
-                </div>
-              </div>
+        <section id="chartsSection" aria-labelledby="performanceTitle">
+          <div class="section-heading">
+            <div>
+              <span class="section-number">02</span>
+              <h2 id="performanceTitle">Performance</h2>
             </div>
-          </details>
+            <span class="section-caption">Last 10 minutes · 30-second intervals</span>
+          </div>
+          <div class="charts-grid">
+            <article class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h3>Hits &amp; misses</h3>
+                  <p>Cache lookups over time</p>
+                </div>
+                <span class="panel-mark">
+                  <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#pulse"></use></svg>
+                </span>
+              </div>
+              <div class="chart-wrap">
+                <canvas id="chartHitsMisses" role="img" aria-label="Hits and misses in the last ten minutes"></canvas>
+              </div>
+            </article>
+            <article class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h3>Response latency</h3>
+                  <p>Average operation duration</p>
+                </div>
+                <span class="unit-label">MILLISECONDS</span>
+              </div>
+              <div class="chart-wrap">
+                <canvas
+                  id="chartLatency"
+                  role="img"
+                  aria-label="Average cache operation latency in the last ten minutes"></canvas>
+              </div>
+            </article>
+          </div>
         </section>
 
-        <!-- ═══════════════════════════════════════════════ -->
-        <!-- Recent Events                                     -->
-        <!-- ═══════════════════════════════════════════════ -->
-        <section id="eventsSection" class="glass-card overflow-hidden">
-          <div
-            class="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.04] dark:border-white/[0.04] flex-wrap gap-2">
-            <h3 class="font-semibold text-sm flex items-center gap-2.5">
-              <div class="w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                <i class="fa-solid fa-list-ul text-blue-400 text-xs"></i>
-              </div>
-              <span class="text-slate-700 dark:text-slate-200">Recent Events</span>
-            </h3>
-            <div class="flex items-center gap-2 text-xs flex-wrap">
-              <select id="eventLimit" class="ctrl-input" aria-label="Number of events to show">
-                <option>50</option>
-                <option selected>200</option>
-                <option>500</option>
-              </select>
-              <select id="typeFilter" class="ctrl-input" aria-label="Filter events by type">
-                <option value="">all types</option>
-                <option>hit</option>
-                <option>miss</option>
-                <option>put</option>
-                <option>flush</option>
-                <option>renew</option>
-                <option>clear</option>
-                <option>tag</option>
-                <option>error</option>
-              </select>
-              <button id="btnExportJson" class="btn-ghost" title="Export events as JSON">
-                <i class="fa-solid fa-download text-[10px]"></i>
-                JSON
-              </button>
-              <button id="btnExportCsv" class="btn-ghost" title="Export events as CSV">
-                <i class="fa-solid fa-file-csv text-[10px]"></i>
-                CSV
-              </button>
-              <button
-                id="btnCleanupRotated"
-                class="btn-ghost"
-                title="Delete rotated log files older than 7 days"
-                aria-label="Delete rotated log files older than 7 days">
-                <i aria-hidden="true" class="fa-solid fa-broom text-[10px]"></i>
-              </button>
+        <section id="eventsSection" aria-labelledby="eventsTitle">
+          <div class="section-heading">
+            <div>
+              <span class="section-number">03</span>
+              <h2 id="eventsTitle">Event stream</h2>
+              <span class="live-badge">
+                <span class="status-dot"></span>
+                Recent activity
+              </span>
             </div>
+            <span id="eventCount" class="section-caption">Awaiting events</span>
           </div>
-          <div id="events" class="custom-scroll max-h-[480px] overflow-auto">
-            <div
-              id="eventsEmpty"
-              class="flex flex-col items-center justify-center py-16 text-slate-400 dark:text-slate-600">
-              <div
-                class="w-12 h-12 rounded-2xl bg-white/[0.04] dark:bg-white/[0.04] flex items-center justify-center mb-4">
-                <i class="fa-regular fa-clock text-2xl"></i>
+          <div class="panel events-panel">
+            <div class="events-toolbar">
+              <div class="event-filters">
+                <label for="typeFilter" class="sr-only">Filter events by type</label>
+                <select id="typeFilter" class="control">
+                  <option value="">All operations</option>
+                  <option value="hit">Hits</option>
+                  <option value="miss">Misses</option>
+                  <option value="put">Writes</option>
+                  <option value="put_forever">Forever writes</option>
+                  <option value="put_many">Batch writes</option>
+                  <option value="flush">Flushes</option>
+                  <option value="renew">Renews</option>
+                  <option value="clear">Clears</option>
+                  <option value="tag">Tags</option>
+                  <option value="flush_tag">Tag flushes</option>
+                  <option value="add">Adds</option>
+                  <option value="error">Errors</option>
+                </select>
+                <label for="eventLimit" class="sr-only">Number of events to load</label>
+                <select id="eventLimit" class="control">
+                  <option value="50">50 events</option>
+                  <option value="200" selected>200 events</option>
+                  <option value="500">500 events</option>
+                </select>
               </div>
-              <p data-empty-title class="text-sm font-medium">No events yet</p>
-              <p data-empty-detail class="text-xs mt-1 text-slate-400 dark:text-slate-600">
-                Events will appear here as they stream in
-              </p>
+              <div class="export-actions">
+                <span>Export</span>
+                <button id="btnExportJson" class="button button-quiet" title="Export filtered events as JSON">
+                  <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#download"></use></svg>
+                  JSON
+                </button>
+                <button id="btnExportCsv" class="button button-quiet" title="Export filtered events as CSV">CSV</button>
+              </div>
+            </div>
+            <div class="event-columns" aria-hidden="true">
+              <span>TIME</span>
+              <span>OPERATION</span>
+              <span>KEY / CONTEXT</span>
+              <span>DURATION</span>
+            </div>
+            <div id="events" class="events-list custom-scroll">
+              <div id="eventsEmpty" class="empty-state">
+                <span class="empty-icon">
+                  <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#pulse"></use></svg>
+                </span>
+                <strong data-empty-title>No events yet</strong>
+                <p data-empty-detail>Run your application to see cache operations here.</p>
+                <code>vendor/bin/cacheer-monitor doctor</code>
+              </div>
+            </div>
+            <div class="events-foot">
+              <span>Newest first</span>
+              <span>
+                Click a key to inspect its history
+                <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#arrow"></use></svg>
+              </span>
             </div>
           </div>
         </section>
 
-        <!-- ═══════════════════════════════════════════════ -->
-        <!-- Deep Dive                                          -->
-        <!-- ═══════════════════════════════════════════════ -->
-        <section id="deepDiveSection" class="space-y-3">
-          <!-- Drivers & Top Keys -->
-          <details class="group glass-card overflow-hidden">
-            <summary
-              class="flex cursor-pointer items-center justify-between text-sm font-semibold px-5 py-3.5 select-none hover:bg-white/[0.03] dark:hover:bg-white/[0.03] transition-colors [&::-webkit-details-marker]:hidden">
-              <span class="flex items-center gap-2.5">
-                <div class="w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center">
-                  <i class="fa-solid fa-layer-group text-amber-400 text-xs"></i>
-                </div>
-                <span class="text-slate-700 dark:text-slate-200">Drivers &amp; Top Keys</span>
-              </span>
-              <span class="text-slate-400 dark:text-slate-600 transition-transform duration-200 group-open:rotate-180">
-                <i class="fa-solid fa-chevron-down text-xs"></i>
-              </span>
-            </summary>
-            <div class="details-content">
-              <div>
-                <div class="px-5 pb-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <!-- Drivers -->
-                  <div
-                    class="p-4 rounded-xl bg-white/[0.02] dark:bg-white/[0.02] border border-white/[0.04] dark:border-white/[0.04]">
-                    <div class="flex items-center justify-between mb-3">
-                      <h3 class="font-semibold text-sm text-slate-500 dark:text-slate-400">
-                        <i class="fa-solid fa-server text-sky-400 mr-2"></i>
-                        Drivers
-                      </h3>
-                      <span class="text-[11px] text-slate-500 dark:text-slate-600 tabular-nums" id="totalEvents">
-                        0 events
-                      </span>
-                    </div>
-                    <canvas id="driversChart" height="170" class="mb-3 w-full max-w-full"></canvas>
-                    <div id="driversList" class="space-y-2.5"></div>
-                  </div>
-                  <!-- Top Keys -->
-                  <div
-                    class="p-4 rounded-xl bg-white/[0.02] dark:bg-white/[0.02] border border-white/[0.04] dark:border-white/[0.04]">
-                    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
-                      <h3 class="font-semibold text-sm text-slate-500 dark:text-slate-400">
-                        <i class="fa-solid fa-key text-amber-400 mr-2"></i>
-                        Top Keys
-                        <span class="text-[10px] font-normal text-slate-500 dark:text-slate-600 ml-1">
-                          — click to inspect
-                        </span>
-                      </h3>
-                      <div class="flex items-center gap-2">
-                        <input
-                          id="filterKey"
-                          placeholder="search key or prefix..."
-                          class="ctrl-input"
-                          aria-label="Search top keys by name or prefix" />
-                        <button id="clearFilter" class="btn-ghost">clear</button>
-                      </div>
-                    </div>
-                    <div class="max-h-64 overflow-auto custom-scroll">
-                      <table class="w-full text-sm">
-                        <thead class="text-[10px] text-slate-400 dark:text-slate-600 uppercase tracking-wider">
-                          <tr>
-                            <th class="text-left py-2 font-medium">Key</th>
-                            <th class="text-right py-2 font-medium">Hits</th>
-                          </tr>
-                        </thead>
-                        <tbody id="topKeysBody"></tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              </div>
+        <section id="deepDiveSection" aria-labelledby="explorerTitle">
+          <div class="section-heading">
+            <div>
+              <span class="section-number">04</span>
+              <h2 id="explorerTitle">Cache explorer</h2>
             </div>
-          </details>
-
-          <!-- Namespaces -->
-          <details class="group glass-card overflow-hidden">
-            <summary
-              class="flex cursor-pointer items-center justify-between text-sm font-semibold px-5 py-3.5 select-none hover:bg-white/[0.03] dark:hover:bg-white/[0.03] transition-colors [&::-webkit-details-marker]:hidden">
-              <span class="flex items-center gap-2.5">
-                <div class="w-7 h-7 rounded-lg bg-teal-500/10 flex items-center justify-center">
-                  <i class="fa-regular fa-folder-open text-teal-400 text-xs"></i>
+            <span class="section-caption">Understand what is stored, and where</span>
+          </div>
+          <div class="explorer-grid">
+            <article class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h3>Storage drivers</h3>
+                  <p id="totalEvents">No recorded events</p>
                 </div>
-                <span class="text-slate-700 dark:text-slate-200">Namespaces</span>
-              </span>
-              <span class="text-slate-400 dark:text-slate-600 transition-transform duration-200 group-open:rotate-180">
-                <i class="fa-solid fa-chevron-down text-xs"></i>
-              </span>
-            </summary>
-            <div class="details-content">
-              <div>
-                <div class="px-5 pb-5">
-                  <div id="namespacesList" class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3"></div>
-                </div>
+                <svg class="icon muted" aria-hidden="true"><use href="assets/art/icons.svg#database"></use></svg>
               </div>
+              <div class="drivers-chart-wrap">
+                <canvas id="driversChart" role="img" aria-label="Events by storage driver"></canvas>
+              </div>
+              <div id="driversList" class="drivers-list"></div>
+            </article>
+            <article class="panel keys-panel">
+              <div class="panel-heading">
+                <div>
+                  <h3>Most active keys</h3>
+                  <p>Top 10 keys by cache hits</p>
+                </div>
+                <svg class="icon muted" aria-hidden="true"><use href="assets/art/icons.svg#key"></use></svg>
+              </div>
+              <div class="table-wrap custom-scroll">
+                <table class="keys-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">CACHE KEY</th>
+                      <th scope="col">HITS</th>
+                    </tr>
+                  </thead>
+                  <tbody id="topKeysBody"></tbody>
+                </table>
+              </div>
+            </article>
+            <article class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h3>Time to live</h3>
+                  <p>Expiry distribution for writes</p>
+                </div>
+                <svg class="icon muted" aria-hidden="true"><use href="assets/art/icons.svg#clock"></use></svg>
+              </div>
+              <div class="chart-wrap ttl-chart-wrap">
+                <canvas id="chartTtl" role="img" aria-label="Cache write expiry distribution"></canvas>
+              </div>
+            </article>
+          </div>
+          <article class="panel namespaces-panel">
+            <div class="panel-heading">
+              <div>
+                <h3>Namespaces</h3>
+                <p>Activity across your cache scopes</p>
+              </div>
+              <svg class="icon muted" aria-hidden="true"><use href="assets/art/icons.svg#layers"></use></svg>
             </div>
-          </details>
+            <div id="namespacesList" class="namespaces-grid"></div>
+          </article>
         </section>
+
+        <footer class="workspace-footer">
+          <div class="source-info">
+            <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#database"></use></svg>
+            <div>
+              <span class="source-label">EVENT SOURCE</span>
+              <div class="source-path">
+                <span id="eventsFile">—</span>
+                <button id="copyPath" class="button button-quiet" aria-label="Copy events file path">
+                  <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#copy"></use></svg>
+                  Copy
+                </button>
+              </div>
+              <span id="origin" class="source-origin">Resolving source…</span>
+            </div>
+          </div>
+          <div class="footer-actions">
+            <span class="update-time">
+              Updated
+              <time id="lastUpdated">—</time>
+            </span>
+            <details class="maintenance">
+              <summary>Log maintenance</summary>
+              <div class="maintenance-menu">
+                <p>Manage the event log.</p>
+                <button id="btnClear" class="button button-danger">
+                  <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#trash"></use></svg>
+                  Clear events
+                </button>
+                <button id="btnCleanupRotated" class="button button-quiet">Remove logs older than 7 days</button>
+              </div>
+            </details>
+          </div>
+        </footer>
       </main>
-
-      <!-- ═══════════════════════════════════════════════ -->
-      <!-- Footer                                            -->
-      <!-- ═══════════════════════════════════════════════ -->
-      <footer class="border-t border-white/[0.04] dark:border-white/[0.04] mt-auto">
-        <div
-          class="max-w-[1440px] mx-auto px-4 sm:px-6 xl:pl-16 py-4 flex items-center justify-between text-xs text-slate-400 dark:text-slate-600">
-          <span class="flex items-center gap-2">
-            <div class="w-4 h-4 rounded bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-              <i class="fa-solid fa-gauge-high text-white text-[7px]"></i>
-            </div>
-            Cacheer Monitor
-          </span>
-          <span>
-            Powered by
-            <a
-              href="https://github.com/silviooosilva/CacheerPHP"
-              class="hover:text-blue-400 transition-colors"
-              target="_blank"
-              rel="noopener">
-              CacheerPHP
-            </a>
-          </span>
-        </div>
-      </footer>
     </div>
 
-    <!-- ═══════════════════════════════════════════════ -->
-    <!-- Key Inspector Panel                              -->
-    <!-- ═══════════════════════════════════════════════ -->
-
-    <!-- Backdrop -->
-    <div id="inspectorBackdrop" class="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm hidden" aria-hidden="true"></div>
-
-    <!-- Slide-in panel -->
-    <div
+    <div id="inspectorBackdrop" class="inspector-backdrop hidden" aria-hidden="true"></div>
+    <section
       id="inspectorPanel"
-      class="fixed top-0 right-0 z-40 h-full w-full sm:w-[440px] translate-x-full flex flex-col border-l border-white/[0.06] dark:border-white/[0.06] shadow-2xl bg-slate-50 dark:bg-[#0a0e1f]"
+      class="inspector-panel"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="inspectorTitle">
-      <!-- Panel header -->
-      <div
-        class="flex items-center justify-between px-5 py-4 border-b border-slate-200/10 dark:border-white/[0.06] shrink-0">
-        <div class="flex items-center gap-2 min-w-0">
-          <div class="w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center">
-            <i class="fa-solid fa-magnifying-glass text-blue-400 text-xs"></i>
-          </div>
-          <span class="text-sm font-semibold text-slate-700 dark:text-slate-200">Key Inspector</span>
+      aria-labelledby="inspectorHeading"
+      aria-hidden="true"
+      inert>
+      <header class="inspector-header">
+        <div>
+          <p class="eyebrow">CACHE EXPLORER</p>
+          <h2 id="inspectorHeading">Key inspector</h2>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="inspector-actions">
           <button
             id="btnRefreshInspector"
-            class="btn-ghost disabled:opacity-40 disabled:cursor-not-allowed"
-            aria-label="Refresh inspector value">
-            <i id="refreshInspectorIcon" class="fa-solid fa-rotate text-[10px]"></i>
-            Refresh Value
+            class="icon-button"
+            aria-label="Refresh key inspector with a live lookup"
+            title="Refresh live value">
+            <svg id="refreshInspectorIcon" class="icon" aria-hidden="true">
+              <use href="assets/art/icons.svg#refresh"></use>
+            </svg>
           </button>
-          <button
-            id="btnCloseInspector"
-            class="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/[0.06] dark:hover:bg-white/[0.06] text-slate-400 transition-colors"
-            aria-label="Close inspector">
-            <i class="fa-solid fa-xmark text-sm"></i>
+          <button id="btnCloseInspector" class="icon-button" aria-label="Close key inspector">
+            <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#x"></use></svg>
           </button>
         </div>
+      </header>
+      <div id="inspectorTitle" class="inspector-key">—</div>
+      <div id="inspectorLoader" class="inspector-loading hidden" role="status">
+        <svg class="icon spinning" aria-hidden="true"><use href="assets/art/icons.svg#refresh"></use></svg>
+        <span>Loading key details…</span>
       </div>
-      <!-- Key name -->
-      <div class="px-5 py-2 border-b border-slate-200/10 dark:border-white/[0.06] shrink-0">
-        <span id="inspectorTitle" class="font-mono text-xs text-slate-500 dark:text-slate-500 break-all">--</span>
-      </div>
-      <!-- Loader -->
-      <div id="inspectorLoader" class="hidden flex items-center justify-center py-16">
-        <div class="w-10 h-10 rounded-2xl bg-blue-500/10 flex items-center justify-center">
-          <i class="fa-solid fa-circle-notch fa-spin text-blue-400 text-lg"></i>
-        </div>
-      </div>
-      <!-- Body -->
-      <div id="inspectorBody" class="flex-1 overflow-auto custom-scroll px-5 py-4"></div>
-    </div>
-
-    <div class="hidden">
-      <span class="bg-emerald-500 bg-rose-500"></span>
-      <span
-        class="bg-emerald-100 text-emerald-700 bg-rose-100 text-rose-700 bg-amber-100 text-amber-700 bg-sky-100 text-sky-700 bg-teal-100 text-teal-700 bg-fuchsia-100 text-fuchsia-700 bg-indigo-100 text-indigo-700 bg-slate-100 text-slate-700 bg-lime-100 text-lime-700 bg-rose-200 text-rose-800"></span>
-      <span
-        class="dark:bg-emerald-900/40 dark:text-emerald-300 dark:bg-rose-900/40 dark:text-rose-300 dark:bg-amber-900/40 dark:text-amber-300 dark:bg-sky-900/40 dark:text-sky-300 dark:bg-teal-900/40 dark:text-teal-300 dark:bg-fuchsia-900/40 dark:text-fuchsia-300 dark:bg-indigo-900/40 dark:text-indigo-300 dark:bg-slate-700/40 dark:text-slate-300 dark:bg-lime-900/40 dark:text-lime-300 dark:bg-rose-900/60 dark:text-rose-200"></span>
-      <span class="translate-x-0 translate-x-full"></span>
-      <span
-        class="text-emerald-600 dark:text-emerald-400 text-rose-600 dark:text-rose-400 text-amber-600 dark:text-amber-400 text-indigo-600 dark:text-indigo-400"></span>
-    </div>
-
-    <script type="module" src="./assets/js/app.js"></script>
-    <script src="./assets/js/ui-observers.js"></script>
+      <div id="inspectorBody" class="inspector-body custom-scroll"></div>
+      <footer class="inspector-footer">
+        <span>Values are redacted before display.</span>
+        <kbd>Esc</kbd>
+        to close
+      </footer>
+    </section>
+    <script src="assets/js/ui-observers.js"></script>
+    <script type="module" src="assets/js/app.js"></script>
   </body>
 </html>

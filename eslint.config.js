@@ -26,7 +26,7 @@ export default [
         IntersectionObserver: "readonly",
         URLSearchParams: "readonly",
         console: "readonly",
-        tailwind: "readonly",
+        getComputedStyle: "readonly",
       },
     },
     rules: {

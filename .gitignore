@@ -1,5 +1,10 @@
 Tests/*
 vendor/
+!public/assets/vendor/
+public/assets/vendor/*
+!public/assets/vendor/chart.umd.min.js
+!public/assets/vendor/Chart.js-LICENSE.md
+!public/assets/vendor/README.md
 node_modules/
 database/
 CacheerPHP/

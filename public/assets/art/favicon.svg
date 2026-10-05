@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Cacheer Monitor</title>
+  <rect width="64" height="64" rx="12" fill="#14202d" />
+  <g transform="translate(4 4) scale(.875)">
+    <path
+      d="M52 9H25C16.16 9 9 16.16 9 25V39C9 47.84 16.16 55 25 55H52V46H26C21.58 46 18 42.42 18 38V26C18 21.58 21.58 18 26 18H52Z"
+      fill="#9ab8ff" />
+    <path
+      d="M27 32h8l5-9 7 18 5-9h8"
+      fill="none"
+      stroke="#7cd6bd"
+      stroke-width="4"
+      stroke-linecap="square"
+      stroke-linejoin="miter" />
+  </g>
+</svg>
