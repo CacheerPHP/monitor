@@ -31,7 +31,10 @@ Caching makes apps fast — but _blind_ caching causes stale data, wasted memory
 - **Zero-config setup** — installs via Composer, auto-registers via `autoload.files`
 - **Live dashboard** — focused telemetry workspace with responsive navigation and dark/light themes
 - **Cache efficiency** — hit rate, lookup count, and an accessible horizontal meter
-- **Timeline insights** — hits vs misses, latency trends, TTL distribution
+- **Timeline insights** — hits vs misses and latency across the selected time range
+- **Cache lifecycle** — stale responses, refreshes, promotions, and lock contention
+- **Problem keys** — rank keys by misses, errors, hits, or p95 operation latency
+- **Health rules** — persistent dashboard settings, sample limits, sustained conditions, and snooze
 - **Key inspector** — drill into any key: history, stats, live value preview
 - **SSE streaming** — events push to the dashboard in real time
 - **Export** — download events as JSON or CSV
@@ -161,15 +164,16 @@ $cache = Cacheer::instrumented($store, $events);   // only this one reports
 | ------------------------ | --------------------------------------------------------------------------------------------------- |
 | **Metric cards**         | Hits, misses, puts, flushes, renews, clears, errors, avg latency (p95/p99)                          |
 | **Cache efficiency**     | Hit rate, lookup count, and a horizontal meter; no lookups is shown explicitly                      |
-| **Hit-rate alert**       | Configurable threshold banner — warns when hit rate drops below N%                                  |
-| **Hits vs Misses chart** | 10-minute rolling timeline with 30s buckets                                                         |
+| **Health rules**         | Hit-rate, error-count, and p95 latency warnings; minimum samples, hold period, and snooze cooldown   |
+| **Hits vs Misses chart** | Selected rolling time range in 20 buckets; All time shows the last 10 minutes                         |
 | **Latency chart**        | Avg latency over time                                                                               |
-| **TTL distribution**     | Bar chart: ≤1min, >1min, >5min, >1hr, >1day, forever                                                |
+| **TTL distribution**     | Expiry buckets when events report TTL; missing metadata is shown explicitly                        |
 | **Drivers doughnut**     | Event count breakdown by driver                                                                     |
-| **Top keys**             | 10 most-accessed keys with search filter                                                            |
-| **Namespaces grid**      | Event counts per namespace                                                                          |
+| **Problem keys**         | Top 10 matching keys per ranking, grouped by driver and namespace; hits, misses, errors, writes, and latency |
+| **Cache lifecycle**      | Stale served, refreshes, promotions, and lock contention; select a signal to filter events            |
+| **Namespaces grid**      | Counts for reported namespaces; unavailable metadata is explained                                  |
 | **Event stream**         | Live feed with type badges, key, driver, duration, TTL, size, value type                            |
-| **Key Inspector**        | Slide-in panel: hit/miss/write stats, timestamps, live value preview, recent events                 |
+| **Key Inspector**        | Driver-specific history, lifecycle counts, timestamps, value preview, and an event timeline         |
 | **Value preview**        | Captured or live-resolved cache values with automatic sensitive field redaction                     |
 | **Export**               | Download events as JSON or CSV                                                                      |
 | **SSE real-time**        | Server-Sent Events push updates to the dashboard                                                    |
@@ -180,6 +184,44 @@ $cache = Cacheer::instrumented($store, $events);   // only this one reports
 | **Workspace navigation** | Persistent desktop rail, compact mobile navigation, and active section highlighting                 |
 | **Local assets**         | Bundled fonts, SVG icons, and Chart.js; the dashboard needs no CDN access                           |
 | **Keyboard access**      | Focus indicators, accessible key buttons, and an inspector with focus trapping and Escape dismissal |
+
+### Understanding the recorded data
+
+Dashboard metrics and charts use all matching events in the **current log**,
+independently of the event-feed limit. Rotated logs are not included. “All time”
+means all activity retained in that current file, not the lifetime of your app.
+Time windows advance on each refresh. Key search filters the event feed and
+rankings; the operation filter affects the feed. Neither changes overview metrics
+or health rules. Feed filters are applied before its limit.
+
+Latency measures recorded **cache operations**, not application requests, loaders,
+or database queries. Untimed lifecycle markers are excluded. Key rankings show
+the number of timed samples alongside average and p95 latency; a small sample
+should not be treated as a stable estimate.
+
+Cacheer 6's current typed events do not include namespace or TTL fields. Monitor
+shows that metadata as unavailable instead of assuming an unscoped key or a
+forever TTL. Those views remain available for older or custom records that
+explicitly provide the fields. An explicitly reported `ttl: null` means forever;
+an absent `ttl` means unknown.
+
+### Health rule settings
+
+Open **Health rules** below the lifecycle panel. Settings are saved in this
+browser. Warnings are evaluated on successful refreshes while the dashboard is
+open; there is no background notification service.
+
+- Hit-rate warnings are enabled by default, using **Alert below** (50%).
+- Error-count and p95 latency warnings are opt-in, defaulting to 5 errors and 10 ms.
+- Minimum samples default to 10: lookups for hit rate, timed operations for latency,
+  and recorded events for error count.
+- A condition must remain observed for 30 seconds before warning.
+- **Snooze** suppresses a warning for the 60-second cooldown. Active warnings stay
+  visible until recovery or snooze; recovered conditions also respect the cooldown
+  before warning again.
+- Changing rule settings, the time range, or namespace starts a fresh evaluation.
+  Connection failures reset evaluation. Reloading the page starts a new evaluation;
+  settings remain saved.
 
 ---
 
@@ -242,7 +284,8 @@ vendor/bin/cacheer-monitor help
 | `GET`  | `/api/health`                 | Server health check                               |
 | `GET`  | `/api/config`                 | Active configuration (events file path, origin)   |
 | `GET`  | `/api/metrics`                | Aggregated metrics with filtering                 |
-| `GET`  | `/api/events`                 | Paginated event log                               |
+| `GET`  | `/api/snapshot`               | Current-log metrics, limited event feed, coverage, and timeline |
+| `GET`  | `/api/events`                 | Latest matching events                            |
 | `POST` | `/api/events/clear`           | Rotate and clear events file (token-protected)    |
 | `GET`  | `/api/events/stream`          | SSE stream of live events                         |
 | `GET`  | `/api/events/export`          | Export events as JSON or CSV                      |
@@ -260,6 +303,14 @@ Most read endpoints accept:
 | `from`      | `float`  | Unix timestamp — start of time range |
 | `until`     | `float`  | Unix timestamp — end of time range   |
 
+For `/api/snapshot`, `limit` applies only to the event feed. Its metrics and
+timeline cover all matching records in the current log. `key_filter` searches
+keys in the feed and rankings, and `type` filters the feed by event type. The
+response includes `coverage` (matching and shown counts), `timeline` (20 buckets),
+and metrics containing `lifecycle`, `problem_keys`, and metadata/sample counts.
+For `/api/metrics`, an explicit/default limit still bounds the records aggregated;
+use `limit=0` for all matching records.
+
 **Key inspector** — `/api/keys/inspect`:
 
 | Param       | Type     | Description                         |
@@ -268,6 +319,8 @@ Most read endpoints accept:
 | `namespace` | `string` | Namespace filter                    |
 | `limit`     | `int`    | Max events for this key             |
 | `live`      | `bool`   | Force live cache lookup             |
+| `driver`    | `string` | Restrict history to one recorded driver |
+| `namespace_missing` | `bool` | Restrict history to records without namespace metadata |
 
 **Export** — `/api/events/export`:
 
@@ -343,6 +396,10 @@ Full documentation: [cacheerphp.com/docs/v6/en/cacheer-monitor/](https://cacheer
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request.
+
+Run PHP checks with `composer test`, dashboard rule checks with `npm run test:ui`,
+and JavaScript lint with `npm run lint`. Focused diagnostics regression tests are
+tracked in `Tests/Regression`.
 
 ---
 

@@ -1,23 +1,17 @@
 // Cacheer Monitor — application entry point
 import { icon } from "./icons.js";
-import {
-  fetchConfig,
-  fetchMetrics,
-  fetchEvents,
-  fetchSnapshot,
-  fetchKeyInspect,
-  clearEventsFile,
-  cleanupRotated,
-  buildExportUrl,
-} from "./api.js";
+import { HealthRules, normalizeRules } from "./health-rules.js";
+import { fetchConfig, fetchSnapshot, fetchKeyInspect, clearEventsFile, cleanupRotated, buildExportUrl } from "./api.js";
 import { createDriversDoughnutChart, createLineChart, createBarChart } from "./charts.js";
 import {
   updateStatusIndicator,
   updateConfigInfo,
   updateMetricCards,
-  updateHitRateAlert,
+  renderHealthWarnings,
+  renderLifecycle,
+  updateCoverage,
   renderDriversList,
-  renderTopKeysTable,
+  renderProblemKeysTable,
   renderNamespacesGrid,
   renderEventsStream,
   renderKeyInspector,
@@ -39,12 +33,17 @@ const AppState = {
   isFirstLoad: true,
   timeFrom: null, // unix timestamp or null (no filter)
   timeUntil: null,
+  timeWindowMinutes: null,
   inspectorKey: null,
   inspectorNamespace: null,
+  inspectorDriver: null,
   inspectorLoading: false,
-  hitRateThreshold: 0.5, // alert when hit rate drops below this
+  healthRules: new HealthRules(),
   lastMetrics: null,
   lastEvents: [],
+  lastTimeline: null,
+  snapshotRequest: 0,
+  connected: false,
   inspectorRequest: 0,
   inspectorReturnFocus: null,
 };
@@ -76,8 +75,8 @@ function toggleTheme() {
   } catch (_) {}
   syncThemeIcon();
   if (AppState.lastMetrics) {
-    renderMetrics(AppState.lastMetrics);
-    updateTimelines(AppState.lastEvents);
+    renderMetrics(AppState.lastMetrics, false);
+    updateTimelines(AppState.lastTimeline);
   }
 }
 
@@ -100,14 +99,9 @@ function hideLoading() {
 // [ time range ]
 
 function setTimeRange(windowMinutes) {
-  if (windowMinutes === null) {
-    AppState.timeFrom = null;
-    AppState.timeUntil = null;
-  } else {
-    const now = Date.now() / 1000;
-    AppState.timeFrom = now - windowMinutes * 60;
-    AppState.timeUntil = now;
-  }
+  AppState.timeWindowMinutes = windowMinutes;
+  AppState.healthRules.reset();
+  updateTimeBounds();
 
   document.querySelectorAll("[data-time-range]").forEach((btn) => {
     const isActive = btn.dataset.timeRange === String(windowMinutes);
@@ -116,6 +110,17 @@ function setTimeRange(windowMinutes) {
   });
 
   loadAndRenderSnapshot();
+}
+
+function updateTimeBounds() {
+  if (AppState.timeWindowMinutes === null) {
+    AppState.timeFrom = null;
+    AppState.timeUntil = null;
+  } else {
+    const now = Date.now() / 1000;
+    AppState.timeFrom = now - AppState.timeWindowMinutes * 60;
+    AppState.timeUntil = now;
+  }
 }
 
 // [ data ]
@@ -168,6 +173,9 @@ function renderTtlChart(metrics) {
   }
 
   const { labels, values } = ttlDistributionChartData(metrics?.ttl_distribution || {});
+  const hasMetadata = Number(metrics?.ttl_samples || 0) > 0;
+  el("ttlEmpty")?.classList.toggle("hidden", hasMetadata);
+  canvas.parentElement.classList.toggle("hidden", !hasMetadata);
   canvas.setAttribute(
     "aria-label",
     "Write expiry distribution: " + labels.map((label, index) => `${label}: ${values[index]}`).join(", "),
@@ -176,22 +184,34 @@ function renderTtlChart(metrics) {
   AppState.ttlChartInstance = createBarChart(canvas.getContext("2d"), labels, values);
 }
 
-function renderMetrics(metrics) {
+function renderMetrics(metrics, evaluateHealth = true) {
   AppState.lastMetrics = metrics;
   updateMetricCards(metrics);
-  updateHitRateAlert(metrics, AppState.hitRateThreshold);
+  if (evaluateHealth && AppState.connected) {
+    renderHealthWarnings(AppState.healthRules.evaluate(metrics), (rule) => {
+      AppState.healthRules.dismiss(rule);
+      renderMetrics(AppState.lastMetrics);
+      el("healthRuleSummary")?.focus();
+    });
+  }
+  renderLifecycle(metrics?.lifecycle || {});
   renderDrivers(metrics);
   renderTtlChart(metrics);
 
   const nsListEl = el("namespacesList");
   if (nsListEl) {
-    renderNamespacesGrid(nsListEl, metrics?.namespaces || {});
+    renderNamespacesGrid(
+      nsListEl,
+      metrics?.namespaces || {},
+      metrics?.namespace_samples || 0,
+      metrics?.total_events || 0,
+    );
   }
 
   const keysEl = el("topKeysBody");
   if (keysEl) {
-    const filterText = String(el("filterKey")?.value || "");
-    renderTopKeysTable(keysEl, metrics?.top_keys || {}, filterText, openKeyInspector);
+    const ranking = String(el("keyRanking")?.value || "misses");
+    renderProblemKeysTable(keysEl, metrics?.problem_keys?.[ranking] || [], openKeyInspector, ranking);
   }
 }
 
@@ -220,44 +240,45 @@ function renderEvents(events) {
       : "Run your application to see cache operations here. Check the event source below if you expected activity.";
     renderEventsStream(eventsEl, filtered, openKeyInspector, { emptyTitle, emptyDetail });
   }
-
-  updateTimelines(events);
-}
-
-async function loadAndRenderMetrics() {
-  try {
-    const limit = Number(el("eventLimit")?.value || 500);
-    const metrics = await fetchMetrics(getNamespaceFilter(), limit, AppState.timeFrom, AppState.timeUntil);
-    renderMetrics(metrics);
-    updateStatusIndicator(true);
-    hideLoading();
-  } catch (_) {
-    updateStatusIndicator(false);
-    hideLoading();
-  }
-}
-
-async function loadAndRenderEvents() {
-  try {
-    const limit = Number(el("eventLimit")?.value || 200);
-    const events = await fetchEvents(limit, getNamespaceFilter(), AppState.timeFrom, AppState.timeUntil);
-    renderEvents(events);
-  } catch (_) {}
 }
 
 // Single request that refreshes both metrics and the event stream from one
 // events-file read. Used by the auto-refresh tick, manual refresh, filters,
 // and (debounced) the SSE stream.
 async function loadAndRenderSnapshot() {
+  const request = ++AppState.snapshotRequest;
+  updateTimeBounds();
   try {
     const limit = Number(el("eventLimit")?.value || 500);
-    const { metrics, events } = await fetchSnapshot(getNamespaceFilter(), limit, AppState.timeFrom, AppState.timeUntil);
+    const { metrics, events, coverage, timeline } = await fetchSnapshot(
+      getNamespaceFilter(),
+      limit,
+      AppState.timeFrom,
+      AppState.timeUntil,
+      String(el("filterKey")?.value || ""),
+      String(el("typeFilter")?.value || ""),
+    );
+    if (request !== AppState.snapshotRequest) {
+      return;
+    }
+    AppState.lastTimeline = timeline;
+    AppState.connected = true;
     renderMetrics(metrics);
     renderEvents(events);
+    updateCoverage(coverage);
+    updateTimelines(timeline);
     updateStatusIndicator(true);
     hideLoading();
   } catch (_) {
+    if (request !== AppState.snapshotRequest) {
+      return;
+    }
     updateStatusIndicator(false);
+    AppState.connected = false;
+    el("healthRuleStatus").textContent = "Waiting for a successful refresh";
+    AppState.healthRules.reset();
+    el("healthWarnings").replaceChildren();
+    delete el("healthWarnings").dataset.signature;
     hideLoading();
   }
 }
@@ -276,51 +297,23 @@ function scheduleSnapshotRefresh(delayMs = 300) {
 
 // [ timelines ]
 
-function bucketize(events, windowMinutes = 10, bucketSeconds = 30) {
-  const now = Math.floor(Date.now() / 1000);
-  const start = now - windowMinutes * 60;
-  const bucketCount = Math.ceil((windowMinutes * 60) / bucketSeconds);
-
-  const labels = [];
-  const hits = new Array(bucketCount).fill(0);
-  const misses = new Array(bucketCount).fill(0);
-  const latSums = new Array(bucketCount).fill(null);
-  const latCounts = new Array(bucketCount).fill(0);
-
-  for (let i = 0; i < bucketCount; i++) {
-    const t = start + i * bucketSeconds;
-    labels.push(new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+function updateTimelines(timeline) {
+  if (!timeline) {
+    return;
   }
-
-  for (const ev of events) {
-    const ts = Math.floor(ev.ts || 0);
-    if (ts < start) {
-      continue;
-    }
-    const idx = Math.min(bucketCount - 1, Math.max(0, Math.floor((ts - start) / bucketSeconds)));
-
-    if (ev.type === "hit") {
-      hits[idx]++;
-    }
-    if (ev.type === "miss") {
-      misses[idx]++;
-    }
-
-    const d = ev?.payload?.duration_ms;
-    if (typeof d === "number" && Number.isFinite(d)) {
-      latSums[idx] = (latSums[idx] ?? 0) + d;
-      latCounts[idx] += 1;
-    }
-  }
-
-  const avgLatency = latSums.map((sum, i) => (sum === null || latCounts[i] === 0 ? null : sum / latCounts[i]));
-
-  return { labels, hits, misses, avgLatency };
-}
-
-function updateTimelines(allEvents) {
   try {
-    const { labels, hits, misses, avgLatency } = bucketize(allEvents);
+    const buckets = timeline.buckets || [];
+    const labels = buckets.map((bucket) =>
+      new Date(bucket.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    );
+    const hits = buckets.map((bucket) => bucket.hits);
+    const misses = buckets.map((bucket) => bucket.misses);
+    const avgLatency = buckets.map((bucket) => bucket.avg_ms);
+    const rangeLabel =
+      AppState.timeWindowMinutes === null ? "Last 10 minutes" : `Last ${AppState.timeWindowMinutes} minutes`;
+    el("timelineCaption").textContent = `${rangeLabel} · all recorded events in range`;
+    el("chartHitsMisses").setAttribute("aria-label", `Cache hits and misses: ${rangeLabel}`);
+    el("chartLatency").setAttribute("aria-label", `Average cache operation latency: ${rangeLabel}`);
 
     const ctx1 = el("chartHitsMisses");
     if (ctx1?.getContext) {
@@ -357,14 +350,15 @@ function updateTimelines(allEvents) {
 
 // [ inspector ]
 
-async function openKeyInspector(key, namespace = null) {
-  return loadKeyInspector(key, namespace, false);
+async function openKeyInspector(key, namespace = null, driver = null) {
+  return loadKeyInspector(key, namespace, false, driver);
 }
 
-async function loadKeyInspector(key, namespace = null, forceLive = false) {
+async function loadKeyInspector(key, namespace = null, forceLive = false, driver = null) {
   const request = ++AppState.inspectorRequest;
   AppState.inspectorKey = key;
   AppState.inspectorNamespace = namespace;
+  AppState.inspectorDriver = driver;
   AppState.inspectorLoading = true;
 
   const panel = el("inspectorPanel");
@@ -407,7 +401,7 @@ async function loadKeyInspector(key, namespace = null, forceLive = false) {
   refreshIcon?.classList.add("spinning");
 
   try {
-    const data = await fetchKeyInspect(key, namespace, 100, forceLive);
+    const data = await fetchKeyInspect(key, namespace, 100, forceLive, driver);
     if (request !== AppState.inspectorRequest) {
       return;
     }
@@ -453,12 +447,14 @@ function closeKeyInspector() {
   AppState.inspectorRequest++;
   AppState.inspectorKey = null;
   AppState.inspectorNamespace = null;
+  AppState.inspectorDriver = null;
   AppState.inspectorLoading = false;
 }
 
 // [ export ]
 
 function triggerExport(format) {
+  updateTimeBounds();
   const limit = Number(el("eventLimit")?.value || 0);
   const url = buildExportUrl(format, limit, getNamespaceFilter(), AppState.timeFrom, AppState.timeUntil);
   const a = document.createElement("a");
@@ -546,9 +542,25 @@ function setupEventListeners() {
     }
     loadAndRenderSnapshot();
   });
-  el("typeFilter")?.addEventListener("change", () => loadAndRenderEvents());
+  el("typeFilter")?.addEventListener("change", () => loadAndRenderSnapshot());
   el("eventLimit")?.addEventListener("change", () => loadAndRenderSnapshot());
-  el("nsFilter")?.addEventListener("input", () => loadAndRenderSnapshot());
+  el("nsFilter")?.addEventListener("input", () => {
+    AppState.healthRules.reset();
+    loadAndRenderSnapshot();
+  });
+  el("keyRanking")?.addEventListener("change", () => {
+    if (AppState.lastMetrics) {
+      renderMetrics(AppState.lastMetrics, false);
+    }
+  });
+  document.querySelectorAll("[data-lifecycle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      el("typeFilter").value = button.dataset.lifecycle;
+      loadAndRenderSnapshot();
+      el("eventsSection").scrollIntoView({ behavior: "smooth", block: "start" });
+      el("typeFilter").focus({ preventScroll: true });
+    });
+  });
 
   // [ copy path ]
   el("copyPath")?.addEventListener("click", async () => {
@@ -574,18 +586,7 @@ function setupEventListeners() {
   el("btnExportJson")?.addEventListener("click", () => triggerExport("json"));
   el("btnExportCsv")?.addEventListener("click", () => triggerExport("csv"));
 
-  // [ hit-rate threshold ]
-  const thresholdInput = el("hitRateThreshold");
-  if (thresholdInput) {
-    thresholdInput.value = String(Math.round(AppState.hitRateThreshold * 100));
-    thresholdInput.addEventListener("change", () => {
-      const entered = Number(thresholdInput.value);
-      const v = Math.min(100, Math.max(0, Number.isFinite(entered) ? entered : 50));
-      thresholdInput.value = String(v);
-      AppState.hitRateThreshold = v / 100;
-      loadAndRenderMetrics();
-    });
-  }
+  setupHealthRules();
 
   // [ inspector ]
   el("btnCloseInspector")?.addEventListener("click", closeKeyInspector);
@@ -593,7 +594,7 @@ function setupEventListeners() {
     if (!AppState.inspectorKey || AppState.inspectorLoading) {
       return;
     }
-    loadKeyInspector(AppState.inspectorKey, AppState.inspectorNamespace, true);
+    loadKeyInspector(AppState.inspectorKey, AppState.inspectorNamespace, true, AppState.inspectorDriver);
   });
   el("inspectorBackdrop")?.addEventListener("click", closeKeyInspector);
   document.addEventListener("keydown", (e) => {
@@ -625,6 +626,9 @@ function setupEventListeners() {
 async function bootstrap() {
   syncThemeIcon();
   showLoading();
+  try {
+    AppState.healthRules.configure(normalizeRules(JSON.parse(localStorage.getItem("cacheer-health-rules") || "{}")));
+  } catch (_) {}
   await loadAndRenderConfig();
   await loadAndRenderSnapshot();
   setupEventListeners();
@@ -636,9 +640,60 @@ async function bootstrap() {
       // collapses into a single refresh instead of one fetch per event.
       sse.onmessage = () => scheduleSnapshotRefresh();
       sse.addEventListener("ping", () => {});
-      sse.onerror = () => sse.close();
+      // EventSource reconnects automatically after timeout or network errors.
+      // Catch up on every connection because the stream starts at the file tail.
+      sse.onopen = () => scheduleSnapshotRefresh();
+      sse.onerror = () => {
+        el("streamStatus").textContent = "Stream reconnecting";
+      };
+      sse.addEventListener("open", () => {
+        el("streamStatus").textContent = "Stream connected";
+      });
     } catch (_) {}
   }
 }
 
 bootstrap();
+
+function setupHealthRules() {
+  const fields = {
+    hitRateEnabled: "ruleHitRate",
+    hitRateThreshold: "hitRateThreshold",
+    errorsEnabled: "ruleErrors",
+    errorCount: "ruleErrorCount",
+    latencyEnabled: "ruleLatency",
+    latencyMs: "ruleLatencyMs",
+    minSamples: "ruleMinSamples",
+    holdSeconds: "ruleHoldSeconds",
+    cooldownSeconds: "ruleCooldownSeconds",
+  };
+  function syncFields() {
+    for (const [key, id] of Object.entries(fields)) {
+      const field = el(id);
+      if (field.type === "checkbox") {
+        field.checked = AppState.healthRules.settings[key];
+      } else {
+        field.value = String(AppState.healthRules.settings[key]);
+      }
+    }
+  }
+  syncFields();
+  for (const id of Object.values(fields)) {
+    el(id).addEventListener("change", () => {
+      const settings = Object.fromEntries(
+        Object.entries(fields).map(([key, fieldId]) => {
+          const field = el(fieldId);
+          return [key, field.type === "checkbox" ? field.checked : field.value === "" ? NaN : Number(field.value)];
+        }),
+      );
+      AppState.healthRules.configure(settings);
+      syncFields();
+      try {
+        localStorage.setItem("cacheer-health-rules", JSON.stringify(AppState.healthRules.settings));
+      } catch (_) {}
+      if (AppState.lastMetrics) {
+        renderMetrics(AppState.lastMetrics);
+      }
+    });
+  }
+}

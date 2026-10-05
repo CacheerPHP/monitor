@@ -117,7 +117,11 @@ final class ApiController
         [$from, $until] = $this->parseTimeRange($request);
 
         return Response::json(
-            $this->readService->snapshot($limit, $namespaceFilter, $from, $until)
+            $this->readService->snapshot(
+                $limit, $namespaceFilter, $from, $until,
+                (string) ($request->query['key_filter'] ?? ''),
+                (string) ($request->query['type'] ?? ''),
+            )
         );
     }
 
@@ -140,7 +144,11 @@ final class ApiController
         $forceLive = filter_var($request->query['live'] ?? false, FILTER_VALIDATE_BOOL);
 
         return Response::json(
-            $this->keyInspectionService->inspect($key, $namespace, $limit, $forceLive)
+            $this->keyInspectionService->inspect(
+                $key, $namespace, $limit, $forceLive,
+                isset($request->query['driver']) ? (string) $request->query['driver'] : null,
+                filter_var($request->query['namespace_missing'] ?? false, FILTER_VALIDATE_BOOL),
+            )
         );
     }
 

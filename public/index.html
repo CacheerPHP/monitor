@@ -141,13 +141,14 @@
             </label>
             <div class="filter-input key-search">
               <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#search"></use></svg>
-              <input id="filterKey" placeholder="Search keys…" aria-label="Search events and top keys" />
+              <input id="filterKey" placeholder="Search keys…" aria-label="Search events and problem keys" />
               <button id="clearFilter" class="icon-button small" aria-label="Clear key search" title="Clear key search">
                 <svg class="icon" aria-hidden="true"><use href="assets/art/icons.svg#x"></use></svg>
               </button>
             </div>
           </div>
-          <div id="hitRateAlert" class="alert-banner hidden" role="status"></div>
+          <p id="metricCoverage" class="coverage-note">Metrics cover recorded activity in the current log.</p>
+          <div id="healthWarnings" class="health-warnings" role="status" aria-live="polite"></div>
           <div id="loadingState" class="loading-grid hidden" role="status" aria-label="Loading metrics">
             <div class="skeleton"></div>
             <div class="skeleton"></div>
@@ -256,6 +257,104 @@
               <span id="since" class="sample-since">No recorded activity</span>
             </div>
           </div>
+          <article class="panel lifecycle-panel" aria-labelledby="lifecycleTitle">
+            <div class="panel-heading">
+              <div>
+                <h3 id="lifecycleTitle">Cache lifecycle</h3>
+                <p>Freshness, refreshes, and coordination. Select a signal to inspect its events.</p>
+              </div>
+            </div>
+            <div class="lifecycle-grid">
+              <button type="button" class="lifecycle-signal" data-lifecycle="stale_served">
+                <span>Stale served</span>
+                <strong id="lifecycle_stale_served">0</strong>
+                <small>Older values returned</small>
+              </button>
+              <button type="button" class="lifecycle-signal" data-lifecycle="refresh">
+                <span>Refreshes</span>
+                <strong id="lifecycle_refresh">0</strong>
+                <small>Refresh work completed</small>
+              </button>
+              <button type="button" class="lifecycle-signal" data-lifecycle="promotion">
+                <span>Promotions</span>
+                <strong id="lifecycle_promotion">0</strong>
+                <small>Values moved to a faster tier</small>
+              </button>
+              <button type="button" class="lifecycle-signal" data-lifecycle="lock_contended">
+                <span>Lock contention</span>
+                <strong id="lifecycle_lock_contended">0</strong>
+                <small>Lock waits timed out</small>
+              </button>
+            </div>
+          </article>
+          <details class="panel health-settings">
+            <summary id="healthRuleSummary">
+              <span>Health rules</span>
+              <span id="healthRuleStatus" class="muted">Waiting for activity</span>
+            </summary>
+            <div class="health-settings-body">
+              <p>
+                Evaluated on refresh while this dashboard is open. Rules use the current time range and namespace; key
+                and operation filters do not change them. Snooze hides a warning for the cooldown period.
+              </p>
+              <div class="health-settings-grid">
+                <label class="rule-switch">
+                  <input id="ruleHitRate" type="checkbox" checked />
+                  Low hit-rate warning
+                  <span class="muted">Uses “Alert below” above</span>
+                </label>
+                <div class="rule-setting">
+                  <label class="rule-switch">
+                    <input id="ruleErrors" type="checkbox" />
+                    Error-count warning
+                  </label>
+                  <label>
+                    At least
+                    <input
+                      id="ruleErrorCount"
+                      type="number"
+                      min="1"
+                      max="1000000"
+                      value="5"
+                      aria-label="Error-count threshold" />
+                    errors in range
+                  </label>
+                </div>
+                <div class="rule-setting">
+                  <label class="rule-switch">
+                    <input id="ruleLatency" type="checkbox" />
+                    p95 latency warning
+                  </label>
+                  <label>
+                    Above
+                    <input
+                      id="ruleLatencyMs"
+                      type="number"
+                      min="0.01"
+                      max="1000000"
+                      step="0.01"
+                      value="10"
+                      aria-label="p95 latency threshold in milliseconds" />
+                    ms
+                  </label>
+                </div>
+                <label>
+                  Minimum samples
+                  <input id="ruleMinSamples" type="number" min="1" max="1000000" value="10" />
+                </label>
+                <label>
+                  Condition holds for
+                  <input id="ruleHoldSeconds" type="number" min="0" max="86400" value="30" />
+                  seconds
+                </label>
+                <label>
+                  Snooze / repeat cooldown
+                  <input id="ruleCooldownSeconds" type="number" min="1" max="86400" value="60" />
+                  seconds
+                </label>
+              </div>
+            </div>
+          </details>
         </section>
 
         <section id="chartsSection" aria-labelledby="performanceTitle">
@@ -264,7 +363,7 @@
               <span class="section-number">02</span>
               <h2 id="performanceTitle">Performance</h2>
             </div>
-            <span class="section-caption">Last 10 minutes · 30-second intervals</span>
+            <span id="timelineCaption" class="section-caption">Last 10 minutes · all recorded events in range</span>
           </div>
           <div class="charts-grid">
             <article class="panel">
@@ -306,7 +405,7 @@
               <h2 id="eventsTitle">Event stream</h2>
               <span class="live-badge">
                 <span class="status-dot"></span>
-                Recent activity
+                <span id="streamStatus">Stream connecting</span>
               </span>
             </div>
             <span id="eventCount" class="section-caption">Awaiting events</span>
@@ -329,6 +428,11 @@
                   <option value="flush_tag">Tag flushes</option>
                   <option value="add">Adds</option>
                   <option value="error">Errors</option>
+                  <option value="stale_served">Stale served</option>
+                  <option value="refresh">Refreshes</option>
+                  <option value="promotion">Promotions</option>
+                  <option value="lock_contended">Lock contention</option>
+                  <option value="prune">Prunes</option>
                 </select>
                 <label for="eventLimit" class="sr-only">Number of events to load</label>
                 <select id="eventLimit" class="control">
@@ -378,7 +482,7 @@
               <span class="section-number">04</span>
               <h2 id="explorerTitle">Cache explorer</h2>
             </div>
-            <span class="section-caption">Understand what is stored, and where</span>
+            <span class="section-caption">Diagnose recorded cache activity</span>
           </div>
           <div class="explorer-grid">
             <article class="panel">
@@ -397,10 +501,18 @@
             <article class="panel keys-panel">
               <div class="panel-heading">
                 <div>
-                  <h3>Most active keys</h3>
-                  <p>Top 10 keys by cache hits</p>
+                  <h3>Problem keys</h3>
+                  <p>Top 10 matching keys per driver and namespace. Latency measures cache operations.</p>
                 </div>
-                <svg class="icon muted" aria-hidden="true"><use href="assets/art/icons.svg#key"></use></svg>
+                <label class="ranking-control">
+                  Rank by
+                  <select id="keyRanking" class="control">
+                    <option value="misses">Most misses</option>
+                    <option value="errors">Most errors</option>
+                    <option value="latency">Highest p95 latency</option>
+                    <option value="hits">Most hits</option>
+                  </select>
+                </label>
               </div>
               <div class="table-wrap custom-scroll">
                 <table class="keys-table">
@@ -408,6 +520,10 @@
                     <tr>
                       <th scope="col">CACHE KEY</th>
                       <th scope="col">HITS</th>
+                      <th scope="col">MISSES</th>
+                      <th scope="col">HIT RATE</th>
+                      <th scope="col">ERRORS / WRITES</th>
+                      <th scope="col">AVG / P95</th>
                     </tr>
                   </thead>
                   <tbody id="topKeysBody"></tbody>
@@ -425,6 +541,7 @@
               <div class="chart-wrap ttl-chart-wrap">
                 <canvas id="chartTtl" role="img" aria-label="Cache write expiry distribution"></canvas>
               </div>
+              <p id="ttlEmpty" class="empty-inline">Expiry metadata is not available in the recorded events.</p>
             </article>
           </div>
           <article class="panel namespaces-panel">

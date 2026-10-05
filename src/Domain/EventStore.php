@@ -14,7 +14,7 @@ final class EventStore
     /**
      * Read events from the JSONL file with optional limit, namespace, and time-range filters.
      *
-     * @param int         $limit     Maximum number of lines to read from the end (0 = all)
+     * @param int         $limit     Maximum matching events to return (0 = all)
      * @param string|null $namespace Namespace filter
      * @param float|null  $from      Unix timestamp — only events at or after this time
      * @param float|null  $until     Unix timestamp — only events at or before this time
@@ -25,11 +25,10 @@ final class EventStore
         if (!is_file($this->filePath)) {
             return [];
         }
-        // For a bounded request, scan backwards and read only the tail bytes we
-        // need instead of slurping (and JSON-decoding) the entire file. The
-        // limit applies to raw lines first, then namespace/time filters narrow
-        // the result — same semantics as the previous file()+array_slice path.
-        $lines = $limit > 0 ? $this->tailLines($limit) : $this->eachLine();
+        // Unfiltered tails can use the fast path. With filters, apply the limit
+        // after matching so busy namespaces cannot hide quieter ones.
+        $hasFilters = $namespace !== null || $from !== null || $until !== null;
+        $lines = $limit > 0 && !$hasFilters ? $this->tailLines($limit) : $this->eachLine();
 
         $events = [];
         foreach ($lines as $rawLine) {
@@ -38,6 +37,9 @@ final class EventStore
                 continue;
             }
             if ($namespace !== null) {
+                if (!array_key_exists('namespace', $decoded['payload'] ?? [])) {
+                    continue;
+                }
                 $recordNamespace = $decoded['payload']['namespace'] ?? '';
                 $normalizedFilter = ($namespace === '(default)') ? '' : $namespace;
                 if ($recordNamespace !== $normalizedFilter) {
@@ -53,7 +55,7 @@ final class EventStore
             }
             $events[] = $decoded;
         }
-        return $events;
+        return $hasFilters && $limit > 0 ? array_slice($events, -$limit) : $events;
     }
 
     /**
@@ -64,7 +66,7 @@ final class EventStore
      * @param int         $limit
      * @return array<int,array<string,mixed>>
      */
-    public function readByKey(string $key, ?string $namespace = null, int $limit = 50): array
+    public function readByKey(string $key, ?string $namespace = null, int $limit = 50, ?string $driver = null, bool $namespaceMissing = false): array
     {
         if (!is_file($this->filePath)) {
             return [];
@@ -78,7 +80,16 @@ final class EventStore
             if (($decoded['payload']['key'] ?? '') !== $key) {
                 continue;
             }
+            if ($driver !== null && ($decoded['payload']['driver'] ?? 'unknown') !== $driver) {
+                continue;
+            }
+            if ($namespaceMissing && array_key_exists('namespace', $decoded['payload'] ?? [])) {
+                continue;
+            }
             if ($namespace !== null) {
+                if (!array_key_exists('namespace', $decoded['payload'] ?? [])) {
+                    continue;
+                }
                 $recordNs = $decoded['payload']['namespace'] ?? '';
                 $normalizedFilter = ($namespace === '(default)') ? '' : $namespace;
                 if ($recordNs !== $normalizedFilter) {

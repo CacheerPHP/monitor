@@ -5,6 +5,7 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
+    "test:ui": "node --test Tests/Regression/*.test.mjs",
     "lint": "eslint public/assets/js/",
     "lint:fix": "eslint --fix public/assets/js/ && npm run format",
     "format": "prettier --write public/"

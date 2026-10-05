@@ -20,10 +20,16 @@ final class KeyInspectionService
     /**
      * @return array{summary:array<string,mixed>,events:array<int,array<string,mixed>>}
      */
-    public function inspect(string $key, ?string $namespace = null, int $limit = 100, bool $forceLive = false): array
-    {
+    public function inspect(
+        string $key,
+        ?string $namespace = null,
+        int $limit = 100,
+        bool $forceLive = false,
+        ?string $driver = null,
+        bool $namespaceMissing = false,
+    ): array {
         $store = $this->context->store();
-        $allKeyEvents = $store->readByKey($key, $namespace, 0);
+        $allKeyEvents = $store->readByKey($key, $namespace, 0, $driver, $namespaceMissing);
         $summary = Aggregator::summarizeKey($key, $allKeyEvents);
         $summary['capture_values_enabled'] = $this->context->captureValuesEnabled();
 

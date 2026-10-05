@@ -55,15 +55,35 @@ final class MonitorReadService
      * dashboard refresh everything with a single request/file read instead of
      * hitting /api/metrics and /api/events separately.
      *
-     * @return array{metrics:array<string,mixed>,events:array<int,array<string,mixed>>}
+     * @return array<string,mixed>
      */
-    public function snapshot(int $limit = 1000, ?string $namespace = null, ?float $from = null, ?float $until = null): array
-    {
-        $events = $this->context->store()->readAll(max(0, $limit), $namespace, $from, $until);
+    public function snapshot(
+        int $limit = 1000,
+        ?string $namespace = null,
+        ?float $from = null,
+        ?float $until = null,
+        string $keyFilter = '',
+        string $eventType = '',
+    ): array {
+        $events = $this->context->store()->readAll(0, $namespace, $from, $until);
+        $metrics = Aggregator::summarize($events, $keyFilter);
+        $feedEvents = array_values(array_filter($events, static function ($event) use ($keyFilter, $eventType): bool {
+            return ($eventType === '' || ($event['type'] ?? '') === $eventType)
+                && ($keyFilter === '' || stripos((string) ($event['payload']['key'] ?? ''), $keyFilter) !== false);
+        }));
+        $visibleEvents = $limit > 0 ? array_slice($feedEvents, -$limit) : $feedEvents;
+        $end = $until ?? microtime(true);
 
         return [
-            'metrics' => Aggregator::summarize($events),
-            'events'  => $events,
+            'metrics' => $metrics,
+            'events'  => $visibleEvents,
+            'coverage' => [
+                'source' => 'current_log',
+                'matching_events' => count($events),
+                'matching_feed_events' => count($feedEvents),
+                'shown_events' => count($visibleEvents),
+            ],
+            'timeline' => Aggregator::timeline($events, $from ?? $end - 600, $end),
         ];
     }
 }

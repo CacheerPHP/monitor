@@ -40,7 +40,7 @@ export function updateMetricCards(metrics) {
       lookups ? `${percent.toFixed(1)}% cache hits` : "No lookups recorded",
     );
   }
-  const hasEvents = Number(metrics?.total_events ?? 0) > 0;
+  const hasEvents = Number(metrics?.latency_samples ?? 0) > 0;
   for (const [id, value] of [
     ["lat_avg", latency.avg_ms],
     ["lat_p95", latency.p95_ms],
@@ -53,28 +53,48 @@ export function updateMetricCards(metrics) {
     metrics?.since ? "Recorded since " + new Date(metrics.since * 1000).toLocaleString() : "No recorded activity",
   );
   document.querySelector(".error-stat")?.classList.toggle("has-errors", Number(metrics?.errors ?? 0) > 0);
-}
-
-export function updateHitRateAlert(metrics, threshold = 0.5) {
-  const banner = document.getElementById("hitRateAlert");
-  const hitRate = metrics?.hit_rate ?? null;
-  const lookups = Number(metrics?.hits ?? 0) + Number(metrics?.misses ?? 0);
-  const isLow = hitRate !== null && lookups >= 10 && hitRate < threshold;
   setTextById(
     "efficiencyNote",
-    !lookups
-      ? "Waiting for your application's activity."
-      : isLow
-        ? "Hit rate is below your alert threshold."
-        : "Lookups served directly from your cache.",
+    lookups ? "Lookups served directly from your cache." : "Waiting for your application's activity.",
   );
-  if (!banner) {
+}
+
+export function renderHealthWarnings({ warnings, pending }, onDismiss) {
+  const container = document.getElementById("healthWarnings");
+  const signature = JSON.stringify(warnings);
+  setTextById(
+    "healthRuleStatus",
+    warnings.length
+      ? `${warnings.length} active warning${warnings.length === 1 ? "" : "s"}`
+      : pending
+        ? "Checking conditions / cooldown"
+        : "No active warnings",
+  );
+  if (!container || container.dataset.signature === signature) {
     return;
   }
-  if (isLow) {
-    banner.innerHTML = `${icon("alert")}<span>Hit rate is <strong>${formatPercent(hitRate)}</strong>, below your ${(threshold * 100).toFixed(0)}% threshold. Check for cold starts or cache configuration issues.</span>`;
+  container.dataset.signature = signature;
+  container.replaceChildren();
+  for (const warning of warnings) {
+    const row = document.createElement("div");
+    row.className = "alert-banner";
+    row.innerHTML = `${icon("alert")}<div><strong>${escapeHtml(warning.title)}</strong><span>${escapeHtml(warning.detail)}</span></div><button type="button" class="button button-quiet" aria-label="Snooze ${escapeHtml(warning.title)}">Snooze</button>`;
+    row.querySelector("button").addEventListener("click", () => onDismiss(warning.id));
+    container.appendChild(row);
   }
-  banner.classList.toggle("hidden", !isLow);
+}
+
+export function renderLifecycle(lifecycle) {
+  for (const type of ["stale_served", "refresh", "promotion", "lock_contended"]) {
+    setTextById(`lifecycle_${type}`, formatNumber(lifecycle[type] || 0));
+  }
+}
+
+export function updateCoverage(coverage) {
+  setTextById(
+    "metricCoverage",
+    `${formatNumber(coverage?.matching_events || 0)} recorded events in range · current log only. Key and operation filters apply to the feed; key search also filters rankings.`,
+  );
 }
 
 export function renderDriversList(containerElement, driversMap, totalCount) {
@@ -93,30 +113,47 @@ export function renderDriversList(containerElement, driversMap, totalCount) {
   });
 }
 
-export function renderTopKeysTable(tbodyElement, topKeysMap, filterText, onKeyClick) {
+export function renderProblemKeysTable(tbodyElement, entries, onKeyClick, ranking = "misses") {
   tbodyElement.replaceChildren();
-  const entries = Object.entries(topKeysMap || {}).filter(
-    ([key]) => !filterText || key.toLowerCase().includes(filterText.toLowerCase()),
-  );
   if (!entries.length) {
-    tbodyElement.innerHTML = '<tr><td colspan="2"><div class="empty-inline">No matching keys recorded.</div></td></tr>';
+    const description =
+      { misses: "misses", errors: "errors", hits: "hits", latency: "timed operations" }[ranking] || "samples";
+    tbodyElement.innerHTML = `<tr><td colspan="6"><div class="empty-inline">No recorded ${description} for matching keys.</div></td></tr>`;
     return;
   }
-  for (const [key, count] of entries) {
+  for (const entry of entries) {
+    const { key, driver, namespace } = entry;
     const row = document.createElement("tr");
-    row.innerHTML = `<td><button class="key-link" type="button" title="Inspect ${escapeHtml(key)}"><span>${escapeHtml(key)}</span>${icon("arrow")}</button></td><td>${formatNumber(count)}</td>`;
-    row.querySelector("button").addEventListener("click", () => onKeyClick?.(key));
+    const timing =
+      entry.latency_samples > 0 ? `${entry.latency.avg_ms.toFixed(1)} / ${entry.latency.p95_ms.toFixed(1)} ms` : "—";
+    row.innerHTML = `<td><button class="key-link" type="button" title="Inspect ${escapeHtml(key)} in ${escapeHtml(driver)}"><span>${escapeHtml(key)}</span>${icon("arrow")}</button><small class="key-context">${escapeHtml(driver)} · ${escapeHtml(namespace === null ? "namespace unreported" : namespace || "default")}</small></td><td>${formatNumber(entry.hits)}</td><td>${formatNumber(entry.misses)}</td><td>${entry.hit_rate === null ? "—" : formatPercent(entry.hit_rate)}</td><td>${formatNumber(entry.errors)} / ${formatNumber(entry.writes)}</td><td>${timing}<small class="key-context">${formatNumber(entry.latency_samples)} timed samples</small></td>`;
+    row
+      .querySelector("button")
+      .addEventListener("click", () => onKeyClick?.(key, namespace === "" ? "(default)" : namespace, driver));
     tbodyElement.appendChild(row);
   }
 }
 
-export function renderNamespacesGrid(containerElement, namespaceMap) {
+export function renderNamespacesGrid(containerElement, namespaceMap, samples, total) {
   containerElement.replaceChildren();
-  const entries = Object.entries(namespaceMap || {});
-  if (!entries.length) {
-    containerElement.innerHTML = '<div class="empty-inline">No namespace activity recorded.</div>';
+  const input = document.getElementById("nsFilter");
+  // Never disable an active filter: the user must be able to clear it.
+  input.disabled = total > 0 && samples === 0 && !input.value;
+  input.placeholder = input.disabled ? "Namespace not reported" : "All namespaces";
+  input.title = input.disabled
+    ? "Namespace metadata is unavailable in these recorded events."
+    : "Filter by reported namespace";
+  if (!total || !samples) {
+    containerElement.innerHTML = `<div class="empty-inline">${total ? "Namespace metadata is not available in the recorded events." : "No namespace activity recorded."}</div>`;
     return;
   }
+  const reported = { ...namespaceMap };
+  const missing = total - samples;
+  if (missing > 0) {
+    reported["(default)"] = Math.max(0, (reported["(default)"] || 0) - missing);
+    reported["(unreported)"] = missing;
+  }
+  const entries = Object.entries(reported).filter(([, count]) => count > 0);
   for (const [name, count] of entries) {
     const card = document.createElement("div");
     card.className = "namespace-card";
@@ -168,8 +205,20 @@ function buildEventRow(event, onKeyClick) {
   const key = payload.key
     ? `<button class="key-link" type="button" title="Inspect ${escapeHtml(payload.key)}"><span>${escapeHtml(payload.key)}</span>${icon("arrow")}</button>`
     : '<span class="muted">Scope operation</span>';
-  row.innerHTML = `<time class="event-time" datetime="${new Date((event.ts || 0) * 1000).toISOString()}">${timestamp}</time><div><span class="${badgeClass(event.type)}">${escapeHtml(event.type)}</span></div><div class="event-context">${key}<div class="event-meta">${context.map((item) => `<span>${item}</span>`).join("")}</div></div><span class="event-duration">${isFiniteNumber(payload.duration_ms) ? payload.duration_ms.toFixed(1) + " ms" : "—"}</span>`;
-  row.querySelector("button")?.addEventListener("click", () => onKeyClick?.(payload.key, payload.namespace || null));
+  if (payload.error) {
+    context.push(`<span class="event-error">${escapeHtml(payload.error)}</span>`);
+  }
+  const timed = !["stale_served", "refresh", "promotion", "lock_contended"].includes(event.type);
+  row.innerHTML = `<time class="event-time" datetime="${new Date((event.ts || 0) * 1000).toISOString()}">${timestamp}</time><div><span class="${badgeClass(event.type)}">${escapeHtml(event.type)}</span></div><div class="event-context">${key}<div class="event-meta">${context.map((item) => `<span>${item}</span>`).join("")}</div></div><span class="event-duration">${timed && isFiniteNumber(payload.duration_ms) ? payload.duration_ms.toFixed(1) + " ms" : "—"}</span>`;
+  row
+    .querySelector("button")
+    ?.addEventListener("click", () =>
+      onKeyClick?.(
+        payload.key,
+        payload.namespace === "" ? "(default)" : payload.namespace || null,
+        payload.driver || "unknown",
+      ),
+    );
   return row;
 }
 
@@ -190,15 +239,16 @@ export function renderKeyInspector(panelElement, data) {
     .slice(0, 15)
     .map(
       (event) =>
-        `<div class="inspector-event"><span class="${badgeClass(event.type)}">${escapeHtml(event.type)}</span><time>${new Date((event.ts || 0) * 1000).toLocaleTimeString()}</time></div>`,
+        `<div class="inspector-event"><div><span class="${badgeClass(event.type)}">${escapeHtml(event.type)}</span><small class="key-context">${escapeHtml(event.payload?.driver || "unknown")}${event.payload?.error ? " · " + escapeHtml(event.payload.error) : ""}</small></div><time>${new Date((event.ts || 0) * 1000).toLocaleTimeString()}</time></div>`,
     )
     .join("");
   panelElement.innerHTML = `
-    <div class="inspector-summary"><div><strong>${escapeHtml(summary.key || "")}</strong><div class="inspector-namespaces">${namespaces || "Default namespace"}</div></div><span class="event-badge ${isLive ? "hit" : "tag"}">${isLive ? "Live value" : "Event history"}</span></div>
+    <div class="inspector-summary"><div><strong>${escapeHtml(summary.key || "")}</strong><div class="inspector-namespaces">${summary.namespace_samples ? namespaces : "Namespace not reported"}</div></div><span class="event-badge ${isLive ? "hit" : "tag"}">${isLive ? "Live value" : "Event history"}</span></div>
     <div class="inspector-stats">${inspectorStat("Hits", formatNumber(summary.hits ?? 0))}${inspectorStat("Misses", formatNumber(summary.misses ?? 0))}${inspectorStat("Writes", formatNumber(summary.puts ?? 0))}${inspectorStat("Hit rate", summary.hit_rate != null ? formatPercent(summary.hit_rate) : "—")}</div>
-    <div class="inspector-metadata">${metaRow("Last written", formatTimestamp(summary.last_put_at))}${metaRow("Last hit", formatTimestamp(summary.last_hit_at))}${metaRow("Last miss", formatTimestamp(summary.last_miss_at))}${metaRow("Size", isFiniteNumber(summary.last_size_bytes) ? formatBytes(summary.last_size_bytes) : "—")}${metaRow("TTL", summary.last_ttl != null ? formatTtl(summary.last_ttl) : "—")}${metaRow("Value type", summary.last_value_type || "—")}</div>
+    <section class="inspector-section"><h3>${icon("pulse")}Lifecycle signals</h3><p>Counts for this key and driver in the current log.</p><div class="inspector-stats">${inspectorStat("Stale served", formatNumber(summary.lifecycle?.stale_served || 0))}${inspectorStat("Refreshes", formatNumber(summary.lifecycle?.refresh || 0))}${inspectorStat("Promotions", formatNumber(summary.lifecycle?.promotion || 0))}${inspectorStat("Contention", formatNumber(summary.lifecycle?.lock_contended || 0))}</div></section>
+    <div class="inspector-metadata">${metaRow("Last written", formatTimestamp(summary.last_put_at))}${metaRow("Last hit", formatTimestamp(summary.last_hit_at))}${metaRow("Last miss", formatTimestamp(summary.last_miss_at))}${metaRow("Size", isFiniteNumber(summary.last_size_bytes) ? formatBytes(summary.last_size_bytes) : "—")}${metaRow("TTL", summary.last_ttl_known ? (summary.last_ttl === null ? "Forever" : formatTtl(summary.last_ttl)) : "Not reported")}${metaRow("Value type", summary.last_value_type || "—")}</div>
     <section class="inspector-section"><h3>${icon("eye")}${isLive ? "Live cache value" : "Value preview"}</h3><p>${isLive ? "Resolved from current cache contents." : "Captured from recorded cache events."} Sensitive fields are masked.</p>${preview}</section>
-    <section class="inspector-section"><h3>${icon("events")}Recent events</h3><p>Up to 15 recorded operations for this key.</p>${recentEvents || '<div class="empty-inline">No events found.</div>'}</section>`;
+    <section class="inspector-section"><h3>${icon("events")}Event timeline</h3><p>Latest 15 recorded operations for this key and driver, newest first.</p>${recentEvents || '<div class="empty-inline">No events found.</div>'}</section>`;
 }
 
 export function ttlDistributionChartData(distribution) {
@@ -285,6 +335,11 @@ function badgeClass(type) {
     "flush_tag",
     "add",
     "error",
+    "stale_served",
+    "refresh",
+    "promotion",
+    "lock_contended",
+    "prune",
   ];
   return "event-badge" + (known.includes(type) ? " " + type : "");
 }

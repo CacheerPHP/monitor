@@ -9,13 +9,15 @@ namespace Cacheer\Monitor\Domain;
  */
 final class Aggregator
 {
+    private const LIFECYCLE_TYPES = ['stale_served', 'refresh', 'promotion', 'lock_contended'];
+
     /**
      * Compute summary statistics (hits, misses, rates, latency, TTL distribution, etc.).
      *
      * @param array<int,array<string,mixed>> $events
      * @return array<string,mixed>
      */
-    public static function summarize(array $events): array
+    public static function summarize(array $events, string $keyFilter = ''): array
     {
         $stats = [
             'hits'     => 0,
@@ -35,8 +37,14 @@ final class Aggregator
             'total_events' => count($events),
             'latency'      => ['avg_ms' => 0.0, 'p95_ms' => 0.0, 'p99_ms' => 0.0],
             'ttl_distribution' => self::emptyTtlBuckets(),
+            'ttl_samples' => 0,
+            'namespace_samples' => 0,
+            'latency_samples' => 0,
+            'lifecycle' => array_fill_keys(self::LIFECYCLE_TYPES, 0),
+            'problem_keys' => [],
         ];
         $latencySamples = [];
+        $keys = [];
 
         foreach ($events as $eventRecord) {
             $type    = $eventRecord['type']    ?? 'unknown';
@@ -53,6 +61,12 @@ final class Aggregator
             $ns = $payload['namespace'] ?? '';
             if ($ns === '') { $ns = '(default)'; }
             $stats['namespaces'][$ns] = ($stats['namespaces'][$ns] ?? 0) + 1;
+            if (array_key_exists('namespace', $payload)) {
+                $stats['namespace_samples']++;
+            }
+            if (array_key_exists($type, $stats['lifecycle'])) {
+                $stats['lifecycle'][$type]++;
+            }
 
             switch ($type) {
                 case 'hit':
@@ -90,13 +104,39 @@ final class Aggregator
 
             // TTL distribution — only for write events that carry a ttl
             if (in_array($type, ['put', 'put_forever', 'add', 'renew'], true)) {
-                $ttl = $payload['ttl'] ?? null;
-                self::recordTtlBucket($stats['ttl_distribution'], $type, $ttl);
+                // Missing TTL metadata is unknown, not a forever write.
+                if ($type === 'put_forever' || array_key_exists('ttl', $payload)) {
+                    $ttl = $payload['ttl'] ?? null;
+                    self::recordTtlBucket($stats['ttl_distribution'], $type, $ttl);
+                    $stats['ttl_samples']++;
+                }
             }
 
-            $durationMs = $payload['duration_ms'] ?? null;
-            if (is_numeric($durationMs)) {
-                $latencySamples[] = (float) $durationMs;
+            $durationMs = self::duration($eventRecord);
+            if ($durationMs !== null) {
+                $latencySamples[] = $durationMs;
+            }
+
+            $key = $payload['key'] ?? null;
+            if (is_string($key) && $key !== '' && ($keyFilter === '' || stripos($key, $keyFilter) !== false)) {
+                // Driver and namespace are part of identity: identical keys must not merge.
+                $identity = json_encode([$driver, $payload['namespace'] ?? null, $key]);
+                $keys[$identity] ??= [
+                    'key' => $key, 'driver' => $driver, 'namespace' => $payload['namespace'] ?? null,
+                    'hits' => 0, 'misses' => 0, 'errors' => 0, 'writes' => 0, 'events' => 0,
+                    'durations' => [],
+                ];
+                $keys[$identity]['events']++;
+                $counter = match ($type) {
+                    'hit' => 'hits', 'miss' => 'misses', 'error' => 'errors',
+                    'put', 'put_forever', 'put_many', 'add' => 'writes', default => null,
+                };
+                if ($counter !== null) {
+                    $keys[$identity][$counter]++;
+                }
+                if ($durationMs !== null) {
+                    $keys[$identity]['durations'][] = $durationMs;
+                }
             }
         }
 
@@ -110,25 +150,27 @@ final class Aggregator
         arsort($stats['namespaces']);
         arsort($stats['types']);
 
-        if (!empty($latencySamples)) {
-            sort($latencySamples);
-            $sampleCount  = count($latencySamples);
-            $average      = array_sum($latencySamples) / $sampleCount;
-            $percentileAt = function (float $quantile) use ($latencySamples, $sampleCount): float {
-                $pos   = ($sampleCount - 1) * $quantile;
-                $lower = (int) floor($pos);
-                $upper = min((int) ceil($pos), $sampleCount - 1);
-                if ($lower === $upper) {
-                    return $latencySamples[$lower];
-                }
-                $fraction = $pos - $lower;
-                return $latencySamples[$lower] * (1 - $fraction) + $latencySamples[$upper] * $fraction;
-            };
-            $stats['latency'] = [
-                'avg_ms' => round($average, 2),
-                'p95_ms' => round($percentileAt(0.95), 2),
-                'p99_ms' => round($percentileAt(0.99), 2),
-            ];
+        $stats['latency'] = self::latency($latencySamples);
+        $stats['latency_samples'] = count($latencySamples);
+        $rows = [];
+        foreach ($keys as $keyStats) {
+            $lookups = $keyStats['hits'] + $keyStats['misses'];
+            $keyStats['hit_rate'] = $lookups > 0 ? $keyStats['hits'] / $lookups : null;
+            $keyStats['latency'] = self::latency($keyStats['durations']);
+            $keyStats['latency_samples'] = count($keyStats['durations']);
+            unset($keyStats['durations']);
+            $rows[] = $keyStats;
+        }
+        foreach (['misses', 'errors', 'hits', 'latency'] as $ranking) {
+            $ranked = array_values(array_filter($rows, static fn ($row) => $ranking === 'latency'
+                ? $row['latency_samples'] > 0 : $row[$ranking] > 0));
+            usort($ranked, static function ($a, $b) use ($ranking): int {
+                $aValue = $ranking === 'latency' ? $a['latency']['p95_ms'] : $a[$ranking];
+                $bValue = $ranking === 'latency' ? $b['latency']['p95_ms'] : $b[$ranking];
+                return ($bValue <=> $aValue) ?: ($b['events'] <=> $a['events'])
+                    ?: ([$a['key'], $a['driver'], $a['namespace']] <=> [$b['key'], $b['driver'], $b['namespace']]);
+            });
+            $stats['problem_keys'][$ranking] = array_slice($ranked, 0, 10);
         }
 
         return $stats;
@@ -152,6 +194,7 @@ final class Aggregator
             'last_hit_at'        => null,
             'last_miss_at'       => null,
             'last_ttl'           => null,
+            'last_ttl_known'     => false,
             'last_size_bytes'    => null,
             'last_value_type'    => null,
             'last_value_preview' => null,
@@ -197,6 +240,7 @@ final class Aggregator
                 if ($ts && ($summary['last_put_at'] === null || $ts > $summary['last_put_at'])) {
                     $summary['last_put_at']     = $ts;
                     $summary['last_ttl']        = $payload['ttl']        ?? null;
+                    $summary['last_ttl_known']  = $type === 'put_forever' || array_key_exists('ttl', $payload);
                     $summary['last_size_bytes'] = $payload['size_bytes'] ?? null;
                     $summary['last_value_type'] = $payload['value_type'] ?? null;
                 }
@@ -224,8 +268,74 @@ final class Aggregator
 
         $lookupCount         = $summary['hits'] + $summary['misses'];
         $summary['hit_rate'] = $lookupCount > 0 ? ($summary['hits'] / $lookupCount) : null;
+        $stats = self::summarize($keyEvents);
+        $summary['lifecycle'] = $stats['lifecycle'];
+        $summary['errors'] = $stats['errors'];
+        $summary['latency'] = $stats['latency'];
+        $summary['latency_samples'] = $stats['latency_samples'];
+        $summary['namespace_samples'] = $stats['namespace_samples'];
 
         return $summary;
+    }
+
+    /** Timed operations only; lifecycle markers currently have no duration. */
+    private static function duration(array $event): ?float
+    {
+        $duration = $event['payload']['duration_ms'] ?? null;
+        if (in_array($event['type'] ?? '', self::LIFECYCLE_TYPES, true) || !is_numeric($duration)) {
+            return null;
+        }
+        $duration = (float) $duration;
+        return is_finite($duration) && $duration >= 0 ? $duration : null;
+    }
+
+    private static function latency(array $samples): array
+    {
+        if ($samples === []) {
+            return ['avg_ms' => 0.0, 'p95_ms' => 0.0, 'p99_ms' => 0.0];
+        }
+        sort($samples);
+        $percentile = static function (float $quantile) use ($samples): float {
+            $position = (count($samples) - 1) * $quantile;
+            $lower = (int) floor($position);
+            $upper = (int) ceil($position);
+            return $samples[$lower] + ($samples[$upper] - $samples[$lower]) * ($position - $lower);
+        };
+        return [
+            'avg_ms' => round(array_sum($samples) / count($samples), 2),
+            'p95_ms' => round($percentile(0.95), 2),
+            'p99_ms' => round($percentile(0.99), 2),
+        ];
+    }
+
+    /** Twenty buckets across the selected range, or the last ten minutes for All. */
+    public static function timeline(array $events, float $from, float $until): array
+    {
+        $interval = max(1.0, ($until - $from) / 20);
+        $buckets = [];
+        for ($i = 0; $i < 20; $i++) {
+            $buckets[] = ['ts' => $from + $i * $interval, 'hits' => 0, 'misses' => 0, 'sum' => 0.0, 'samples' => 0];
+        }
+        foreach ($events as $event) {
+            $ts = $event['ts'] ?? null;
+            if (!is_numeric($ts) || $ts < $from || $ts > $until) {
+                continue;
+            }
+            $index = min(19, (int) floor(($ts - $from) / $interval));
+            if (($event['type'] ?? '') === 'hit') { $buckets[$index]['hits']++; }
+            if (($event['type'] ?? '') === 'miss') { $buckets[$index]['misses']++; }
+            $duration = self::duration($event);
+            if ($duration !== null) {
+                $buckets[$index]['sum'] += $duration;
+                $buckets[$index]['samples']++;
+            }
+        }
+        foreach ($buckets as &$bucket) {
+            $bucket['avg_ms'] = $bucket['samples'] > 0 ? round($bucket['sum'] / $bucket['samples'], 2) : null;
+            unset($bucket['sum']);
+        }
+        unset($bucket);
+        return ['from' => $from, 'until' => $until, 'interval_seconds' => $interval, 'buckets' => $buckets];
     }
 
     // -----------------------------------------------------------------------

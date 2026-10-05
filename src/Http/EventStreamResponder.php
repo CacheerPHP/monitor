@@ -36,11 +36,18 @@ final class EventStreamResponder
 
         $file = $this->context->eventsFile();
         $lastSize = is_file($file) ? (int) filesize($file) : 0;
+        $lastInode = is_file($file) ? @fileinode($file) : false;
         $start = time();
 
         while (!connection_aborted() && (time() - $start) < $timeout) {
             clearstatcache(true, $file);
             $currentSize = is_file($file) ? (int) filesize($file) : 0;
+            $currentInode = is_file($file) ? @fileinode($file) : false;
+            // Rotation/truncation starts a new file; resume from its beginning.
+            if ($currentSize < $lastSize || $currentInode !== $lastInode) {
+                $lastSize = 0;
+            }
+            $lastInode = $currentInode;
 
             if ($currentSize > $lastSize) {
                 $handle = @fopen($file, 'rb');
@@ -49,6 +56,10 @@ final class EventStreamResponder
                     @fseek($handle, $lastSize);
                     $chunk = stream_get_contents($handle, $maxChunkBytes) ?: '';
                     @fclose($handle);
+                    // Leave an incomplete JSONL record for the next read.
+                    $newline = strrpos($chunk, "\n");
+                    $chunk = $newline === false ? '' : substr($chunk, 0, $newline + 1);
+                    $lastSize += strlen($chunk);
 
                     $lines = preg_split("/[\r\n]+/", $chunk, -1, PREG_SPLIT_NO_EMPTY) ?: [];
                     foreach ($lines as $line) {
@@ -58,8 +69,6 @@ final class EventStreamResponder
                     @ob_flush();
                     @flush();
                 }
-
-                $lastSize = $currentSize;
             } else {
                 echo "event: ping\n";
                 echo 'data: ' . json_encode(['ts' => microtime(true)]) . "\n\n";

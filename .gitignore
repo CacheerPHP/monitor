@@ -1,4 +1,5 @@
 Tests/*
+!Tests/Regression/
 vendor/
 !public/assets/vendor/
 public/assets/vendor/*

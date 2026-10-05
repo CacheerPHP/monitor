@@ -35,8 +35,21 @@ export async function fetchMetrics(namespaceFilter = "", limit = 1000, from = nu
   return res.json();
 }
 
-export async function fetchSnapshot(namespaceFilter = "", limit = 1000, from = null, until = null) {
+export async function fetchSnapshot(
+  namespaceFilter = "",
+  limit = 1000,
+  from = null,
+  until = null,
+  keyFilter = "",
+  eventType = "",
+) {
   const params = new URLSearchParams();
+  if (keyFilter) {
+    params.set("key_filter", keyFilter);
+  }
+  if (eventType) {
+    params.set("type", eventType);
+  }
   if (namespaceFilter) {
     params.set("namespace", namespaceFilter);
   }
@@ -77,8 +90,14 @@ export async function fetchEvents(limit = 200, namespaceFilter = "", from = null
   return res.json();
 }
 
-export async function fetchKeyInspect(key, namespace = null, limit = 100, forceLive = false) {
+export async function fetchKeyInspect(key, namespace = null, limit = 100, forceLive = false, driver = null) {
   const params = new URLSearchParams({ key, limit: String(limit) });
+  if (driver) {
+    params.set("driver", driver);
+    if (namespace === null) {
+      params.set("namespace_missing", "1");
+    }
+  }
   if (namespace) {
     params.set("namespace", namespace);
   }
