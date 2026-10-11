@@ -1,6 +1,6 @@
 {
   "name": "cacheer-monitor",
-  "version": "1.0.5",
+  "version": "2.0.0",
   "description": "Real-time dashboard and telemetry for [CacheerPHP](https://github.com/cacheerphp/CacheerPHP). Instruments your cache layer automatically — no code changes required.",
   "type": "module",
   "main": "index.js",
