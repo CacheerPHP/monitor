@@ -114,8 +114,8 @@ export async function fetchKeyInspect(key, namespace = null, limit = 100, forceL
 
 // [ actions ]
 
-export async function clearEventsFile() {
-  const headers = {};
+async function authenticatedPost(path, options = {}) {
+  const headers = { ...options.headers };
   try {
     const saved = localStorage.getItem("cacheer-token");
     if (saved) {
@@ -123,23 +123,31 @@ export async function clearEventsFile() {
     }
   } catch (_) {}
 
-  let res = await fetch("/api/events/clear", { method: "POST", headers });
+  let res = await fetch(path, { ...options, method: "POST", headers });
 
   if (res.status === 401) {
-    const token = prompt("Enter monitor token to clear events (set CACHEER_MONITOR_TOKEN in .env):");
+    const token = prompt("Enter monitor token (set CACHEER_MONITOR_TOKEN in .env):");
     if (!token) {
-      return false;
+      return null;
     }
-    try {
-      localStorage.setItem("cacheer-token", token);
-    } catch (_) {}
-    res = await fetch("/api/events/clear", { method: "POST", headers: { "X-Monitor-Token": token } });
+    headers["X-Monitor-Token"] = token;
+    res = await fetch(path, { ...options, method: "POST", headers });
+    if (res.ok) {
+      try {
+        localStorage.setItem("cacheer-token", token);
+      } catch (_) {}
+    }
   }
 
-  if (!res.ok) {
-    return false;
-  }
+  return res;
+}
+
+export async function clearEventsFile() {
   try {
+    const res = await authenticatedPost("/api/events/clear");
+    if (!res?.ok) {
+      return false;
+    }
     const data = await res.json();
     return Boolean(data?.ok);
   } catch (_) {
@@ -148,15 +156,28 @@ export async function clearEventsFile() {
 }
 
 export async function cleanupRotated(maxAgeDays = 7) {
-  const res = await fetch("/api/events/cleanup-rotated", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ max_age_days: maxAgeDays }),
-  });
-  if (!res.ok) {
-    return { ok: false, deleted: 0 };
+  try {
+    const res = await authenticatedPost("/api/events/cleanup-rotated", {
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ max_age_days: maxAgeDays }),
+    });
+    if (res === null) {
+      return { ok: false, deleted: 0, cancelled: true };
+    }
+    if (!res.ok) {
+      return {
+        ok: false,
+        deleted: 0,
+        error:
+          res.status === 401
+            ? "Authentication failed. Check your monitor token."
+            : `Cleanup failed (HTTP ${res.status}).`,
+      };
+    }
+    return await res.json();
+  } catch (_) {
+    return { ok: false, deleted: 0, error: "Cleanup failed. Check the monitor connection and try again." };
   }
-  return res.json();
 }
 
 export function buildExportUrl(format = "json", limit = 0, namespaceFilter = "", from = null, until = null) {

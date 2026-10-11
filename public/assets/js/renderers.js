@@ -234,7 +234,11 @@ export function renderKeyInspector(panelElement, data) {
   const preview =
     summary.last_value_preview != null && summary.last_value_preview !== ""
       ? `<pre class="value-preview" tabindex="0" role="region" aria-label="Redacted value preview">${escapeHtml(formatJsonPreview(summary.last_value_preview))}</pre>`
-      : `<div class="preview-unavailable">${summary.capture_values_enabled ? "No captured preview is available for this key, and a live lookup was not available." : "Value capture is disabled. Enable CACHEER_MONITOR_CAPTURE_VALUES in your application to record previews."}</div>`;
+      : `<div class="preview-unavailable">${escapeHtml(summary.capture_values_enabled ? summary.live_lookup_reason || "No captured preview is available for this key, and a live lookup was not available." : "Value capture is disabled. Enable CACHEER_MONITOR_CAPTURE_VALUES in your application to record previews.")}</div>`;
+  const lookupNotice =
+    summary.last_value_preview != null && summary.live_lookup_reason
+      ? `<p class="preview-unavailable">${escapeHtml(summary.live_lookup_reason)} Showing the last captured preview.</p>`
+      : "";
   const recentEvents = (data.events || [])
     .slice(0, 15)
     .map(
@@ -247,7 +251,7 @@ export function renderKeyInspector(panelElement, data) {
     <div class="inspector-stats">${inspectorStat("Hits", formatNumber(summary.hits ?? 0))}${inspectorStat("Misses", formatNumber(summary.misses ?? 0))}${inspectorStat("Writes", formatNumber(summary.puts ?? 0))}${inspectorStat("Hit rate", summary.hit_rate != null ? formatPercent(summary.hit_rate) : "—")}</div>
     <section class="inspector-section"><h3>${icon("pulse")}Lifecycle signals</h3><p>Counts for this key and driver in the current log.</p><div class="inspector-stats">${inspectorStat("Stale served", formatNumber(summary.lifecycle?.stale_served || 0))}${inspectorStat("Refreshes", formatNumber(summary.lifecycle?.refresh || 0))}${inspectorStat("Promotions", formatNumber(summary.lifecycle?.promotion || 0))}${inspectorStat("Contention", formatNumber(summary.lifecycle?.lock_contended || 0))}</div></section>
     <div class="inspector-metadata">${metaRow("Last written", formatTimestamp(summary.last_put_at))}${metaRow("Last hit", formatTimestamp(summary.last_hit_at))}${metaRow("Last miss", formatTimestamp(summary.last_miss_at))}${metaRow("Size", isFiniteNumber(summary.last_size_bytes) ? formatBytes(summary.last_size_bytes) : "—")}${metaRow("TTL", summary.last_ttl_known ? (summary.last_ttl === null ? "Forever" : formatTtl(summary.last_ttl)) : "Not reported")}${metaRow("Value type", summary.last_value_type || "—")}</div>
-    <section class="inspector-section"><h3>${icon("eye")}${isLive ? "Live cache value" : "Value preview"}</h3><p>${isLive ? "Resolved from current cache contents." : "Captured from recorded cache events."} Sensitive fields are masked.</p>${preview}</section>
+    <section class="inspector-section"><h3>${icon("eye")}${isLive ? "Live cache value" : "Value preview"}</h3><p>${isLive ? "Resolved from current cache contents." : "Captured from recorded cache events."} Sensitive fields are masked.</p>${preview}${lookupNotice}</section>
     <section class="inspector-section"><h3>${icon("events")}Event timeline</h3><p>Latest 15 recorded operations for this key and driver, newest first.</p>${recentEvents || '<div class="empty-inline">No events found.</div>'}</section>`;
 }
 

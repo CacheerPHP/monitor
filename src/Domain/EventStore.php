@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cacheer\Monitor\Domain;
 
+use Cacheer\Monitor\Support\EventLogFiles;
+
 /**
  * Read and manage the JSONL events file used by the dashboard.
  */
@@ -182,7 +184,7 @@ final class EventStore
     }
 
     /**
-     * Delete rotated event files (.rotated / .bak) older than $maxAgeDays days.
+     * Delete this events file's archives older than $maxAgeDays days.
      *
      * @param int $maxAgeDays
      * @return int Number of files deleted
@@ -193,17 +195,17 @@ final class EventStore
         if (!is_dir($dir)) {
             return 0;
         }
-        $cutoff  = time() - ($maxAgeDays * 86400);
+        $cutoff  = time() - (max(1, $maxAgeDays) * 86400);
         $deleted = 0;
         $files   = @scandir($dir) ?: [];
         foreach ($files as $file) {
-            if ($file === '.' || $file === '..') {
-                continue;
-            }
-            if (!str_ends_with($file, '.rotated') && !str_ends_with($file, '.bak')) {
+            if (!EventLogFiles::isArchive($this->filePath, $file)) {
                 continue;
             }
             $fullPath = $dir . DIRECTORY_SEPARATOR . $file;
+            if (!is_file($fullPath) || is_link($fullPath)) {
+                continue;
+            }
             $mtime    = @filemtime($fullPath);
             if ($mtime !== false && $mtime < $cutoff) {
                 if (@unlink($fullPath)) {
@@ -221,13 +223,24 @@ final class EventStore
      */
     public function clear(): bool
     {
-        if (!is_file($this->filePath)) {
-            return @touch($this->filePath);
+        $lock = @fopen($this->filePath . '.lock', 'cb');
+        if ($lock === false) {
+            return false;
         }
-        // Best-effort: rotate the current log aside, then truncate. Whether or
-        // not the rename succeeds, the live file ends up empty (recreated).
-        @rename($this->filePath, $this->filePath . '.' . date('Ymd_His') . '.bak');
-        return @file_put_contents($this->filePath, '') !== false;
+
+        try {
+            if (!flock($lock, LOCK_EX)) {
+                return false;
+            }
+            if (is_file($this->filePath) && !EventLogFiles::archive($this->filePath, 'bak')) {
+                return false;
+            }
+
+            return @file_put_contents($this->filePath, '') !== false;
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
     }
 
     /**

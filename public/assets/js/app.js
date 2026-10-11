@@ -516,6 +516,13 @@ function setupEventListeners() {
   });
   el("btnCleanupRotated")?.addEventListener("click", async () => {
     const result = await cleanupRotated(7);
+    if (result?.cancelled) {
+      return;
+    }
+    if (!result?.ok) {
+      alert(result?.error || "Cleanup failed. Check the monitor connection and try again.");
+      return;
+    }
     const n = result?.deleted ?? 0;
     alert(`Cleanup complete: ${n} rotated file${n !== 1 ? "s" : ""} deleted (older than 7 days).`);
   });

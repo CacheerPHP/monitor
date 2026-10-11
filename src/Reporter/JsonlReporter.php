@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cacheer\Monitor\Reporter;
 
 use Cacheer\Monitor\Support\Env;
+use Cacheer\Monitor\Support\EventLogFiles;
 use Cacheer\Monitor\Support\Path;
 
 /**
@@ -86,13 +87,12 @@ final class JsonlReporter implements MetricsReporterInterface
         // opened once and reused for the reporter's lifetime, so a high-traffic
         // cache doesn't pay an fopen/fclose on every single operation.
         $lockHandle = $this->lockHandle();
-        if ($lockHandle === null) {
+        if ($lockHandle === null || !flock($lockHandle, LOCK_EX)) {
             // Fallback: write without rotation protection.
             @file_put_contents($this->filePath, $line, FILE_APPEND | LOCK_EX);
             return;
         }
 
-        flock($lockHandle, LOCK_EX);
         try {
             // Rotate while holding the lock — safe from race conditions.
             $this->rotateIfNeeded($lineBytes);
@@ -148,9 +148,8 @@ final class JsonlReporter implements MetricsReporterInterface
         clearstatcache(true, $this->filePath);
         $size = file_exists($this->filePath) ? (int) filesize($this->filePath) : 0;
 
-        if (($size + $incomingBytes) > $this->maxBytes) {
-            $date = date('Ymd_His');
-            @rename($this->filePath, $this->filePath . '.' . $date . '.rotated');
+        if ($size > 0 && ($size + $incomingBytes) > $this->maxBytes) {
+            EventLogFiles::archive($this->filePath, 'rotated');
         }
     }
 }

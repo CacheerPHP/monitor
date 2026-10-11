@@ -232,13 +232,29 @@ All configuration is via **environment variables** (OS env or `.env` file in you
 | Variable                         | Default                                    | Description                                                                                     |
 | -------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------- |
 | `CACHEER_MONITOR_EVENTS`         | `sys_get_temp_dir()/cacheer-monitor.jsonl` | Path to the JSONL events file                                                                   |
-| `CACHEER_MONITOR_TOKEN`          | _(none)_                                   | If set, required via `X-Monitor-Token` header to clear events                                   |
+| `CACHEER_MONITOR_TOKEN`          | _(none)_                                   | If set, required via `X-Monitor-Token` for clearing events and cleaning archives                 |
 | `CACHEER_MONITOR_CAPTURE_VALUES` | `false`                                    | Enable value preview capture in events                                                          |
 | `CACHEER_MONITOR_AUTO_REGISTER`  | `true`                                     | Set to `false` to stop the autoload bridge registering a listener, so you can wire one yourself |
 | `CACHEER_MONITOR_STREAM_TIMEOUT` | `30`                                       | SSE stream connection timeout (seconds)                                                         |
 | `CACHEER_MONITOR_WORKERS`        | `4`                                        | Server worker processes; the live stream holds one for its whole timeout (Unix only)            |
 | `CACHEER_MONITOR_PREVIEW_BYTES`  | `2048`                                     | Max bytes for value preview JSON                                                                |
 | `CACHEER_MONITOR_REDACT_KEYS`    | _(empty)_                                  | Comma-separated list of additional keys to redact in previews                                   |
+| `CACHEER_MONITOR_CACHE_PATH`     | _(none)_                                   | Application cache directory for live FileStore previews                                         |
+| `CACHEER_MONITOR_CACHE_TABLE`    | `cacheer_store`                             | Application cache table for live DatabaseStore previews                                         |
+
+### Live value previews
+
+Captured events are the primary source of previews. When value capture is enabled,
+the inspector can also read a live value from FileStore, DatabaseStore, or
+RedisStore using the application's shared connection settings (`DB_*`, `REDIS_*`,
+and the cache path/table above). These reads do not emit telemetry events.
+
+Live reads use the default storage pipeline and key encoder. For custom codecs,
+compression, encryption, or process-local stores such as ArrayStore, enable value
+capture in the application. The inspector explains unavailable lookups and keeps
+the last captured preview when a live refresh fails. Scoped v6 keys are resolved
+only when their display name identifies one stored value; ambiguous names fall
+back to captured previews.
 
 ### Built-in redacted keys
 
@@ -334,6 +350,12 @@ use `limit=0` for all matching records.
 { "max_age_days": 7 }
 ```
 
+Cleanup removes only timestamped `.rotated` and `.bak` archives belonging to the
+configured events file. It preserves unrelated backups, recent archives,
+directories, and symbolic links. Clearing and rotation share the reporter's
+lock, and repeated rotations keep separate archives even within the same second.
+Both actions use the saved monitor token, prompting when authentication is needed.
+
 ---
 
 ## Custom Events File Path
@@ -397,9 +419,9 @@ Full documentation: [cacheerphp.com/docs/v6/en/cacheer-monitor/](https://cacheer
 
 Contributions are welcome! Please open an issue or submit a pull request.
 
-Run PHP checks with `composer test`, dashboard rule checks with `npm run test:ui`,
-and JavaScript lint with `npm run lint`. Focused diagnostics regression tests are
-tracked in `Tests/Regression`.
+Run PHP checks with `composer test`, dashboard regression checks with `npm run test:ui`,
+and JavaScript lint with `npm run lint`. PHP unit tests are tracked in `Tests/Unit`;
+diagnostics and dashboard regression tests are tracked in `Tests/Regression`.
 
 ---
 

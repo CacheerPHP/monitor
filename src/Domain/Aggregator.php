@@ -207,6 +207,7 @@ final class Aggregator
         // Separately track which timestamp produced the most recent value_preview
         // (can come from either a put OR a hit event)
         $lastPreviewTs = null;
+        $lastPreviewPayload = null;
 
         foreach ($keyEvents as $ev) {
             $type    = $ev['type']    ?? '';
@@ -254,16 +255,17 @@ final class Aggregator
                 if ($preview !== null) {
                     $summary['last_value_preview'] = $preview;
                     $summary['preview_source'] = 'event';
-                    // Also update size/type from this event if they are more recent
-                    if ($payload['size_bytes'] ?? null) {
-                        $summary['last_size_bytes'] = $payload['size_bytes'];
-                    }
-                    if ($payload['value_type'] ?? null) {
-                        $summary['last_value_type'] = $payload['value_type'];
-                    }
+                    $lastPreviewPayload = $payload;
                     $lastPreviewTs = $ts;
                 }
             }
+        }
+
+        // Size and type must describe the selected preview, regardless of the
+        // order in which older write events were encountered.
+        if ($lastPreviewPayload !== null) {
+            $summary['last_size_bytes'] = $lastPreviewPayload['size_bytes'] ?? null;
+            $summary['last_value_type'] = $lastPreviewPayload['value_type'] ?? null;
         }
 
         $lookupCount         = $summary['hits'] + $summary['misses'];

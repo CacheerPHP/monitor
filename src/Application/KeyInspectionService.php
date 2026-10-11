@@ -34,10 +34,15 @@ final class KeyInspectionService
         $summary['capture_values_enabled'] = $this->context->captureValuesEnabled();
 
         if ($summary['capture_values_enabled'] && ($forceLive || $summary['last_value_preview'] === null)) {
-            $preview = $this->liveCachePreviewer->preview($key, $namespace, $this->driverHint($allKeyEvents));
+            $payload = $allKeyEvents[0]['payload'] ?? [];
+            $lookupNamespace = $namespace ?? ($payload['namespace'] ?? null);
+            $lookup = $this->liveCachePreviewer->lookup(
+                $key, $lookupNamespace, $driver ?? $this->driverHint($allKeyEvents),
+            );
+            $summary['live_lookup_reason'] = $lookup['reason'];
 
-            if ($preview !== null) {
-                $summary = array_replace($summary, $preview);
+            if ($lookup['preview'] !== null) {
+                $summary = array_replace($summary, $lookup['preview']);
             }
         }
 
