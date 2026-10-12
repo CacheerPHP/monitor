@@ -48,13 +48,6 @@ Caching makes apps fast — but _blind_ caching causes stale data, wasted memory
 - PHP 8.3+
 - CacheerPHP 6
 
-> **On the version constraint.** The monitor hooks CacheerPHP 6's
-> `Observability\Telemetry` tap, which does not exist in v4/v5. While 6.0 is a
-> pre-release the requirement is `^6.0@RC`, which pins to the tagged
-> `6.0.0-RC1` — a plain `^6.0` silently fails `minimum-stability: stable` and
-> leaves you on an old release with no tap to hook, which looks exactly like a
-> broken monitor. Run `vendor/bin/cacheer-monitor doctor` if in doubt.
-
 ---
 
 ## Quick Start
