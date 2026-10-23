@@ -11,6 +11,20 @@ final class Aggregator
 {
     private const LIFECYCLE_TYPES = ['stale_served', 'refresh', 'promotion', 'lock_contended'];
 
+    /** A resilient cache's outage reports (CacheerPHP 6.1+). */
+    private const FAILOVER_TYPES = ['fallback_served', 'circuit_opened', 'circuit_closed', 'reconciled'];
+
+    /**
+     * Records whose duration is not a cache operation's latency: lifecycle
+     * markers, the loader's run time, and resilience reports.
+     */
+    private const UNTIMED_TYPES = [...self::LIFECYCLE_TYPES, ...self::FAILOVER_TYPES, 'computed'];
+
+    /** Fallback activity separated by more than this starts a new outage window. */
+    private const OUTAGE_GAP_SECONDS = 60.0;
+
+    private const OUTAGE_WINDOWS = 10;
+
     /**
      * Compute summary statistics (hits, misses, rates, latency, TTL distribution, etc.).
      *
@@ -28,6 +42,8 @@ final class Aggregator
             'flushes'  => 0,
             'renews'   => 0,
             'tags'     => 0,
+            'tag_flushes' => 0,
+            'increments'  => 0,
             'errors'   => 0,
             'drivers'      => [],
             'top_keys'     => [],
@@ -41,10 +57,12 @@ final class Aggregator
             'namespace_samples' => 0,
             'latency_samples' => 0,
             'lifecycle' => array_fill_keys(self::LIFECYCLE_TYPES, 0),
+            'computed' => ['count' => 0, 'total_ms' => 0.0],
             'problem_keys' => [],
         ];
         $latencySamples = [];
         $keys = [];
+        $failoverEvents = [];
 
         foreach ($events as $eventRecord) {
             $type    = $eventRecord['type']    ?? 'unknown';
@@ -94,12 +112,28 @@ final class Aggregator
                     $stats['renews']++;
                     break;
                 case 'tag':
-                case 'flush_tag':
                     $stats['tags']++;
+                    break;
+                case 'flush_tag':
+                    $stats['tag_flushes']++;
+                    break;
+                case 'increment':
+                    $stats['increments']++;
                     break;
                 case 'error':
                     $stats['errors']++;
                     break;
+                case 'computed':
+                    $stats['computed']['count']++;
+                    $computedMs = $payload['duration_ms'] ?? null;
+                    if (is_numeric($computedMs) && is_finite((float) $computedMs) && $computedMs >= 0) {
+                        $stats['computed']['total_ms'] += (float) $computedMs;
+                    }
+                    break;
+            }
+
+            if (in_array($type, self::FAILOVER_TYPES, true)) {
+                $failoverEvents[] = $eventRecord;
             }
 
             // TTL distribution — only for write events that carry a ttl
@@ -129,7 +163,7 @@ final class Aggregator
                 $keys[$identity]['events']++;
                 $counter = match ($type) {
                     'hit' => 'hits', 'miss' => 'misses', 'error' => 'errors',
-                    'put', 'put_forever', 'put_many', 'add' => 'writes', default => null,
+                    'put', 'put_forever', 'put_many', 'add', 'increment' => 'writes', default => null,
                 };
                 if ($counter !== null) {
                     $keys[$identity][$counter]++;
@@ -152,6 +186,8 @@ final class Aggregator
 
         $stats['latency'] = self::latency($latencySamples);
         $stats['latency_samples'] = count($latencySamples);
+        $stats['computed']['total_ms'] = round($stats['computed']['total_ms'], 3);
+        $stats['failover'] = self::failover($failoverEvents);
         $rows = [];
         foreach ($keys as $keyStats) {
             $lookups = $keyStats['hits'] + $keyStats['misses'];
@@ -284,11 +320,94 @@ final class Aggregator
     private static function duration(array $event): ?float
     {
         $duration = $event['payload']['duration_ms'] ?? null;
-        if (in_array($event['type'] ?? '', self::LIFECYCLE_TYPES, true) || !is_numeric($duration)) {
+        if (in_array($event['type'] ?? '', self::UNTIMED_TYPES, true) || !is_numeric($duration)) {
             return null;
         }
         $duration = (float) $duration;
         return is_finite($duration) && $duration >= 0 ? $duration : null;
+    }
+
+    /**
+     * Failover activity and the outage windows it forms.
+     *
+     * Windows come from fallback activity rather than circuit events alone:
+     * failover state lives in each PHP process, and a short-lived PHP-FPM
+     * request usually serves from the fallback without ever opening its
+     * circuit. Activity separated by more than OUTAGE_GAP_SECONDS starts a new
+     * window. A window counts as recovered once a circuit-closed or reconciled
+     * record follows its last fallback activity.
+     *
+     * @param array<int,array<string,mixed>> $events failover records only
+     * @return array<string,mixed>
+     */
+    private static function failover(array $events): array
+    {
+        $summary = [
+            'fallback_served' => 0,
+            'circuit_opened'  => 0,
+            'circuit_closed'  => 0,
+            'reconciled'      => 0,
+            'invalidated'     => 0,
+            'windows'         => [],
+        ];
+
+        usort($events, static fn (array $a, array $b): int => (float) ($a['ts'] ?? 0) <=> (float) ($b['ts'] ?? 0));
+
+        $windows = [];
+        $current = null;
+        foreach ($events as $event) {
+            $type = $event['type'];
+            $payload = $event['payload'] ?? [];
+            $ts = is_numeric($event['ts'] ?? null) ? (float) $event['ts'] : null;
+            // A batch answered by the fallback reports how many keys it covered.
+            $summary[$type] += $type === 'fallback_served' ? max(1, (int) ($payload['count'] ?? 1)) : 1;
+
+            if ($type === 'reconciled' && is_numeric($payload['count'] ?? null)) {
+                $summary['invalidated'] += (int) $payload['count'];
+            }
+
+            if ($ts === null) {
+                continue;
+            }
+
+            if ($type === 'fallback_served' || $type === 'circuit_opened') {
+                if ($current === null || $ts - $current['end'] > self::OUTAGE_GAP_SECONDS) {
+                    if ($current !== null) {
+                        $windows[] = $current;
+                    }
+                    $current = [
+                        'start' => $ts, 'end' => $ts, 'fallback_served' => 0, 'processes' => [],
+                        'error' => null, 'recovered' => false,
+                    ];
+                }
+                $current['end'] = $ts;
+                $current['recovered'] = false;
+                if ($type === 'fallback_served') {
+                    $current['fallback_served'] += max(1, (int) ($payload['count'] ?? 1));
+                }
+                if ($type === 'circuit_opened' && $current['error'] === null && is_string($payload['error'] ?? null)) {
+                    $current['error'] = $payload['error'];
+                }
+                if (isset($event['instance']) && is_string($event['instance'])) {
+                    $current['processes'][$event['instance']] = true;
+                }
+            } elseif ($current !== null) {
+                $current['recovered'] = true;
+            }
+        }
+
+        if ($current !== null) {
+            $windows[] = $current;
+        }
+
+        foreach (array_slice(array_reverse($windows), 0, self::OUTAGE_WINDOWS) as $window) {
+            $window['processes'] = count($window['processes']);
+            $window['duration_seconds'] = round($window['end'] - $window['start'], 3);
+            $summary['windows'][] = $window;
+        }
+        $summary['window_count'] = count($windows);
+
+        return $summary;
     }
 
     private static function latency(array $samples): array

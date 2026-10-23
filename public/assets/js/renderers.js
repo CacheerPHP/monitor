@@ -24,7 +24,7 @@ export function updateConfigInfo(config) {
 
 export function updateMetricCards(metrics) {
   const latency = metrics?.latency || {};
-  for (const name of ["hits", "misses", "puts", "flushes", "renews", "clears", "errors"]) {
+  for (const name of ["hits", "misses", "puts", "flushes", "renews", "increments", "tag_flushes", "clears", "errors"]) {
     setTextById(name, formatNumber(metrics?.[name] ?? 0));
   }
   const lookups = Number(metrics?.hits ?? 0) + Number(metrics?.misses ?? 0);
@@ -88,6 +88,48 @@ export function renderLifecycle(lifecycle) {
   for (const type of ["stale_served", "refresh", "promotion", "lock_contended"]) {
     setTextById(`lifecycle_${type}`, formatNumber(lifecycle[type] || 0));
   }
+}
+
+const FAILOVER_SIGNALS = ["fallback_served", "circuit_opened", "circuit_closed", "reconciled"];
+
+export function renderFailover(failover, listElement) {
+  for (const type of FAILOVER_SIGNALS) {
+    setTextById(`failover_${type}`, formatNumber(failover?.[type] || 0));
+  }
+  const windowCount = Number(failover?.window_count || 0);
+  setTextById(
+    "failoverSummary",
+    windowCount
+      ? `${formatNumber(windowCount)} outage window${windowCount === 1 ? "" : "s"} in the current log`
+      : "No fallback activity in the current log",
+  );
+  if (listElement) {
+    listElement.innerHTML = failoverWindowsHtml(failover);
+  }
+}
+
+/**
+ * Outage windows, newest first. Rendered from telemetry, so every value is escaped.
+ */
+export function failoverWindowsHtml(failover) {
+  const windows = Array.isArray(failover?.windows) ? failover.windows : [];
+  if (!windows.length) {
+    return `<li class="failover-empty">No outage recorded. Failover reporting needs CacheerPHP 6.1 or later and a resilient cache.</li>`;
+  }
+  return windows
+    .map((window) => {
+      const served = Number(window.fallback_served || 0);
+      const processes = Number(window.processes || 0);
+      const details = [
+        formatDuration(window.duration_seconds),
+        `${formatNumber(served)} served by fallback`,
+        `${formatNumber(processes)} process${processes === 1 ? "" : "es"}`,
+      ].join(" · ");
+      const recovery = window.recovered ? "Recovery recorded" : "No recovery recorded yet";
+      const error = window.error ? `<span class="failover-error">${escapeHtml(window.error)}</span>` : "";
+      return `<li class="failover-window${window.recovered ? " recovered" : ""}"><div><strong>${escapeHtml(formatTimestamp(window.start))}</strong><span>${escapeHtml(details)}</span>${error}</div><span class="event-badge ${window.recovered ? "circuit_closed" : "circuit_opened"}">${recovery}</span></li>`;
+    })
+    .join("");
 }
 
 export function updateCoverage(coverage) {
@@ -316,6 +358,15 @@ function formatJsonPreview(raw) {
     return raw;
   }
 }
+function formatDuration(value) {
+  const seconds = Math.max(0, Number(value) || 0);
+  if (seconds < 1) {
+    return "under a second";
+  }
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds % 60);
+  return minutes ? `${minutes}m ${rest}s` : `${rest}s`;
+}
 function formatTimestamp(value) {
   return value ? new Date(value * 1000).toLocaleString() : "—";
 }
@@ -344,6 +395,12 @@ function badgeClass(type) {
     "promotion",
     "lock_contended",
     "prune",
+    "increment",
+    "computed",
+    "fallback_served",
+    "circuit_opened",
+    "circuit_closed",
+    "reconciled",
   ];
   return "event-badge" + (known.includes(type) ? " " + type : "");
 }

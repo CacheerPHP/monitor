@@ -9,6 +9,7 @@ import {
   updateMetricCards,
   renderHealthWarnings,
   renderLifecycle,
+  renderFailover,
   updateCoverage,
   renderDriversList,
   renderProblemKeysTable,
@@ -195,6 +196,7 @@ function renderMetrics(metrics, evaluateHealth = true) {
     });
   }
   renderLifecycle(metrics?.lifecycle || {});
+  renderFailover(metrics?.failover || {}, el("failoverWindows"));
   renderDrivers(metrics);
   renderTtlChart(metrics);
 

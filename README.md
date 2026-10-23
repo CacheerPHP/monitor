@@ -33,6 +33,7 @@ Caching makes apps fast — but _blind_ caching causes stale data, wasted memory
 - **Cache efficiency** — hit rate, lookup count, and an accessible horizontal meter
 - **Timeline insights** — hits vs misses and latency across the selected time range
 - **Cache lifecycle** — stale responses, refreshes, promotions, and lock contention
+- **Failover** — operations served by the fallback, circuit changes, reconciliation, and outage windows (CacheerPHP 6.1+)
 - **Problem keys** — rank keys by misses, errors, hits, or p95 operation latency
 - **Health rules** — persistent dashboard settings, sample limits, sustained conditions, and snooze
 - **Key inspector** — drill into any key: history, stats, live value preview
@@ -158,7 +159,7 @@ $cache = Cacheer::instrumented($store, $events);   // only this one reports
 
 | Feature                  | Description                                                                                         |
 | ------------------------ | --------------------------------------------------------------------------------------------------- |
-| **Metric cards**         | Hits, misses, puts, flushes, renews, clears, errors, avg latency (p95/p99)                          |
+| **Metric cards**         | Hits, misses, puts, flushes, renews, increments, tag flushes, clears, errors, avg latency (p95/p99) |
 | **Cache efficiency**     | Hit rate, lookup count, and a horizontal meter; no lookups is shown explicitly                      |
 | **Health rules**         | Hit-rate, error-count, and p95 latency warnings; minimum samples, hold period, and snooze cooldown   |
 | **Hits vs Misses chart** | Selected rolling time range in 20 buckets; All time shows the last 10 minutes                         |
@@ -167,6 +168,7 @@ $cache = Cacheer::instrumented($store, $events);   // only this one reports
 | **Drivers doughnut**     | Event count breakdown by driver                                                                     |
 | **Problem keys**         | Top 10 matching keys per ranking, grouped by driver and namespace; hits, misses, errors, writes, and latency |
 | **Cache lifecycle**      | Stale served, refreshes, promotions, and lock contention; select a signal to filter events            |
+| **Failover**             | Served by fallback, circuit opened/closed, reconciled, and outage windows newest first (CacheerPHP 6.1+) |
 | **Namespaces grid**      | Counts for reported namespaces; unavailable metadata is explained                                  |
 | **Event stream**         | Live feed with type badges, key, driver, duration, TTL, size, value type                            |
 | **Key Inspector**        | Driver-specific history, lifecycle counts, timestamps, value preview, and an event timeline         |
@@ -191,15 +193,24 @@ rankings; the operation filter affects the feed. Neither changes overview metric
 or health rules. Feed filters are applied before its limit.
 
 Latency measures recorded **cache operations**, not application requests, loaders,
-or database queries. Untimed lifecycle markers are excluded. Key rankings show
+or database queries. Untimed lifecycle markers, loader runs, and failover reports
+are excluded. Key rankings show
 the number of timed samples alongside average and p95 latency; a small sample
 should not be treated as a stable estimate.
 
-Cacheer 6's current typed events do not include namespace or TTL fields. Monitor
-shows that metadata as unavailable instead of assuming an unscoped key or a
-forever TTL. Those views remain available for older or custom records that
-explicitly provide the fields. An explicitly reported `ttl: null` means forever;
-an absent `ttl` means unknown.
+CacheerPHP 6.1 and later report each event's namespace (the key's scope), TTL,
+and operation, so the namespace and TTL views, Renews, Increments, and Tag flushes
+fill in. With CacheerPHP 6.0 those fields are absent, and Monitor shows the
+metadata as unavailable instead of assuming an unscoped key or a forever TTL. An
+explicitly reported `ttl: null` means forever; an absent `ttl` means unknown.
+
+The **Failover** panel needs CacheerPHP 6.1 and a resilient cache. Failover state
+lives in each PHP process, and a short-lived PHP-FPM request usually serves from
+the fallback without ever opening its circuit, so outage windows are built from
+fallback activity: activity more than a minute apart starts a new window. A
+window shows "Recovery recorded" once a circuit close or a reconciliation follows
+it; otherwise "No recovery recorded yet", which does not mean the outage is still
+going on.
 
 ### Health rule settings
 

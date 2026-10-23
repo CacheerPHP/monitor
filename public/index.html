@@ -247,6 +247,14 @@
                 <strong id="renews">—</strong>
               </span>
               <span>
+                Increments
+                <strong id="increments">—</strong>
+              </span>
+              <span>
+                Tag flushes
+                <strong id="tag_flushes">—</strong>
+              </span>
+              <span>
                 Clears
                 <strong id="clears">—</strong>
               </span>
@@ -286,6 +294,37 @@
                 <small>Lock waits timed out</small>
               </button>
             </div>
+          </article>
+          <article class="panel failover-panel" aria-labelledby="failoverTitle">
+            <div class="panel-heading">
+              <div>
+                <h3 id="failoverTitle">Failover</h3>
+                <p id="failoverSummary">No fallback activity in the current log</p>
+              </div>
+            </div>
+            <div class="lifecycle-grid">
+              <button type="button" class="lifecycle-signal" data-lifecycle="fallback_served">
+                <span>Served by fallback</span>
+                <strong id="failover_fallback_served">0</strong>
+                <small>Operations the fallback answered</small>
+              </button>
+              <button type="button" class="lifecycle-signal" data-lifecycle="circuit_opened">
+                <span>Circuit opened</span>
+                <strong id="failover_circuit_opened">0</strong>
+                <small>Processes that stopped trying the primary</small>
+              </button>
+              <button type="button" class="lifecycle-signal" data-lifecycle="circuit_closed">
+                <span>Circuit closed</span>
+                <strong id="failover_circuit_closed">0</strong>
+                <small>Processes back on the primary</small>
+              </button>
+              <button type="button" class="lifecycle-signal" data-lifecycle="reconciled">
+                <span>Reconciled</span>
+                <strong id="failover_reconciled">0</strong>
+                <small>Outage writes cleaned up on recovery</small>
+              </button>
+            </div>
+            <ul id="failoverWindows" class="failover-windows" aria-label="Outage windows, newest first"></ul>
           </article>
           <details class="panel health-settings">
             <summary id="healthRuleSummary">
@@ -433,6 +472,12 @@
                   <option value="promotion">Promotions</option>
                   <option value="lock_contended">Lock contention</option>
                   <option value="prune">Prunes</option>
+                  <option value="increment">Increments</option>
+                  <option value="computed">Loader runs</option>
+                  <option value="fallback_served">Served by fallback</option>
+                  <option value="circuit_opened">Circuit opened</option>
+                  <option value="circuit_closed">Circuit closed</option>
+                  <option value="reconciled">Reconciled</option>
                 </select>
                 <label for="eventLimit" class="sr-only">Number of events to load</label>
                 <select id="eventLimit" class="control">
