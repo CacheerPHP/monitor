@@ -123,6 +123,10 @@ tag availability rather than copying an old pre-release instruction.
 - Failover state lives in each PHP process, and short-lived requests rarely open
   a circuit. Derive outage windows from fallback activity, and never present a
   window as ongoing only because no recovery was recorded.
+- A wasted write needs a known outcome: overwritten, deleted, or expired with a
+  reported TTL, before any read. Never count a write that may still be live or
+  whose TTL is unknown. Judge process-local drivers (`ArrayStore`) per process,
+  for wasted writes and stampedes alike.
 - Group problem keys and inspector history by reported driver, namespace
   identity/missing metadata, and key. A display name alone is not globally unique.
 - Handle malformed/partial JSONL records and a missing or rotated file without

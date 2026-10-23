@@ -10,6 +10,7 @@ import {
   renderHealthWarnings,
   renderLifecycle,
   renderFailover,
+  renderWastedWork,
   updateCoverage,
   renderDriversList,
   renderProblemKeysTable,
@@ -198,6 +199,7 @@ function renderMetrics(metrics, evaluateHealth = true) {
   }
   renderLifecycle(metrics?.lifecycle || {});
   renderFailover(metrics?.failover || {}, el("failoverWindows"));
+  renderWastedWork(metrics, el("stampedeList"));
   renderDrivers(metrics);
   renderTtlChart(metrics);
 

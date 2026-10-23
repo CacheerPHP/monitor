@@ -326,6 +326,37 @@
             </div>
             <ul id="failoverWindows" class="failover-windows" aria-label="Outage windows, newest first"></ul>
           </article>
+          <article class="panel failover-panel wasted-panel" aria-labelledby="wastedTitle">
+            <div class="panel-heading">
+              <div>
+                <h3 id="wastedTitle">Wasted work</h3>
+                <p id="wastedSummary">Writes nobody read, and loaders run more than once at the same time.</p>
+              </div>
+            </div>
+            <div class="lifecycle-grid">
+              <div class="lifecycle-signal static">
+                <span>Wasted writes</span>
+                <strong id="wasted_writes">0</strong>
+                <small id="wasted_writes_detail">Ended before any read</small>
+              </div>
+              <div class="lifecycle-signal static">
+                <span>Expired unread</span>
+                <strong id="wasted_expired">0</strong>
+                <small>Their TTL ran out first</small>
+              </div>
+              <button type="button" class="lifecycle-signal" data-lifecycle="miss">
+                <span>Stampedes</span>
+                <strong id="stampede_count">0</strong>
+                <small id="stampede_rule">Bursts of misses on one key from several processes</small>
+              </button>
+              <button type="button" class="lifecycle-signal" data-lifecycle="computed">
+                <span>Loader runs in stampedes</span>
+                <strong id="stampede_loader_runs">0</strong>
+                <small>Work done more than once</small>
+              </button>
+            </div>
+            <ul id="stampedeList" class="failover-windows" aria-label="Recent stampedes, newest first"></ul>
+          </article>
           <details class="panel health-settings">
             <summary id="healthRuleSummary">
               <span>Health rules</span>
@@ -603,6 +634,7 @@
                 <select id="patternRanking" class="control">
                   <option value="hit_rate">Lowest hit rate</option>
                   <option value="time_saved">Most time saved</option>
+                  <option value="wasted_writes">Most wasted writes</option>
                   <option value="misses">Most misses</option>
                   <option value="lookups">Most lookups</option>
                   <option value="latency">Highest p95 latency</option>
@@ -620,6 +652,7 @@
                     <th scope="col">MISSES</th>
                     <th scope="col">AVG / P95</th>
                     <th scope="col">TIME SAVED (EST.)</th>
+                    <th scope="col">WASTED WRITES</th>
                   </tr>
                 </thead>
                 <tbody id="keyPatternsBody"></tbody>

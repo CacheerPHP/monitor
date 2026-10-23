@@ -2050,6 +2050,13 @@ kbd {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
+.lifecycle-signal.static {
+  cursor: default;
+}
+.lifecycle-signal.static:hover {
+  border-color: var(--border);
+  background: var(--surface-subtle);
+}
 .lifecycle-signal span {
   color: var(--muted);
   font-size: 12px;

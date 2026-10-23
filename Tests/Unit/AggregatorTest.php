@@ -287,6 +287,8 @@ class AggregatorTest extends TestCase
             'uuid'                => ['order:550e8400-e29b-41d4-a716-446655440000', 'order:{uuid}'],
             'ulid'                => ['session:01ARZ3NDEKTSV4RRFFQ69G5FAV', 'session:{ulid}'],
             'date'                => ['report:2026-10-22', 'report:{date}'],
+            'year and month'      => ['dashboard:2026-10', 'dashboard:{date}'],
+            'number range'        => ['range:10-20', 'range:{id}-{id}'],
             'timestamp'           => ['report:2026-10-22T10:30:00Z', 'report:{date}'],
             'email'               => ['login:ada@example.com', 'login:{email}'],
             'hash'                => ['avatar:9f86d081884c7d659a2feaa0c55ad015', 'avatar:{hash}'],
@@ -395,5 +397,103 @@ class AggregatorTest extends TestCase
         $this->assertNull($stats['time_saved']['estimated_ms']);
         $this->assertSame([], $stats['key_patterns']['rankings']['time_saved']);
         $this->assertArrayNotHasKey('rows', $stats['key_patterns']);
+    }
+
+    public function test_a_write_is_wasted_only_when_it_ends_before_any_read(): void
+    {
+        $put = static fn (float $ts, string $key, array $extra = []): array => ['ts' => $ts, 'type' => 'put', 'payload' => ['key' => $key, 'driver' => 'redis'] + $extra];
+        $event = static fn (float $ts, string $type, string $key): array => ['ts' => $ts, 'type' => $type, 'payload' => ['key' => $key, 'driver' => 'redis']];
+        $events = [
+            // read, then overwritten: useful, then a new write that is still live and unread.
+            $put(1.0, 'a:1', ['ttl' => 600]), $event(2.0, 'hit', 'a:1'), $put(3.0, 'a:1', ['ttl' => 600]),
+            // overwritten unread
+            $put(1.0, 'a:2', ['ttl' => 600]), $put(2.0, 'a:2', ['ttl' => 600]), $event(3.0, 'hit', 'a:2'),
+            // deleted unread
+            $put(1.0, 'a:3', ['ttl' => 600]), $event(2.0, 'clear', 'a:3'),
+            // expired unread: 10 s TTL, the log runs to t = 100
+            $put(1.0, 'a:4', ['ttl' => 10]),
+            // TTL unknown and never read: no known outcome
+            $put(1.0, 'a:5'),
+            // forever and never read: may still be read, no known outcome
+            ['ts' => 1.0, 'type' => 'put_forever', 'payload' => ['key' => 'a:6', 'driver' => 'redis']],
+            // counters are not value writes
+            $event(1.0, 'increment', 'a:7'), $event(2.0, 'increment', 'a:7'),
+            $event(100.0, 'hit', 'other'),
+        ];
+
+        $stats = Aggregator::summarize($events);
+
+        $this->assertSame(
+            ['wasted' => 3, 'overwritten' => 1, 'deleted' => 1, 'expired' => 1, 'evaluated' => 5],
+            $stats['wasted_writes'],
+            'Evaluated: a:1 read, a:2 overwritten, a:2 rewrite read, a:3 deleted, a:4 expired.',
+        );
+
+        $pattern = $stats['key_patterns']['rankings']['wasted_writes'][0];
+        $this->assertSame('a:{id}', $pattern['pattern']);
+        $this->assertSame(3, $pattern['wasted_writes']);
+        $this->assertSame(5, $pattern['evaluated_writes']);
+    }
+
+    public function test_a_read_after_expiry_does_not_rescue_the_write(): void
+    {
+        $stats = Aggregator::summarize([
+            ['ts' => 1.0, 'type' => 'put', 'payload' => ['key' => 'k', 'driver' => 'redis', 'ttl' => 5]],
+            ['ts' => 9.0, 'type' => 'miss', 'payload' => ['key' => 'k', 'driver' => 'redis']],
+        ]);
+
+        $this->assertSame(1, $stats['wasted_writes']['expired']);
+    }
+
+    public function test_concurrent_misses_from_several_processes_form_a_stampede(): void
+    {
+        $miss = static fn (float $ts, string $instance, string $key = 'report:1'): array => ['ts' => $ts, 'type' => 'miss', 'instance' => $instance, 'payload' => ['key' => $key, 'driver' => 'redis', 'namespace' => '']];
+        $computed = static fn (float $ts, string $instance): array => ['ts' => $ts, 'type' => 'computed', 'instance' => $instance, 'payload' => ['key' => 'report:1', 'driver' => 'redis', 'namespace' => '', 'duration_ms' => 800.0]];
+        $events = [
+            // A stampede: 4 misses in 0.3 s from 3 processes, and 3 of them ran the loader.
+            $miss(10.0, 'p1'), $miss(10.1, 'p2'), $miss(10.2, 'p3'), $miss(10.3, 'p1'),
+            $computed(10.9, 'p1'), $computed(11.0, 'p2'), $computed(11.1, 'p3'),
+            // Not stampedes: one process missing in a loop...
+            $miss(50.0, 'p1', 'loop:1'), $miss(50.1, 'p1', 'loop:1'), $miss(50.2, 'p1', 'loop:1'), $miss(50.3, 'p1', 'loop:1'),
+            // ...and misses from several processes spread wider than the window.
+            $miss(80.0, 'p1', 'slow:1'), $miss(83.0, 'p2', 'slow:1'), $miss(86.0, 'p3', 'slow:1'),
+        ];
+
+        $stampedes = Aggregator::summarize($events)['stampedes'];
+
+        $this->assertSame(1, $stampedes['count']);
+        $this->assertSame(3, $stampedes['loader_runs']);
+        $this->assertSame(Aggregator::STAMPEDE_WINDOW_SECONDS, $stampedes['window_seconds']);
+        $this->assertSame(Aggregator::STAMPEDE_MIN_MISSES, $stampedes['min_misses']);
+        $this->assertSame(
+            ['start' => 10.0, 'duration_seconds' => 0.3, 'misses' => 4, 'processes' => 3, 'loader_runs' => 3, 'key' => 'report:1', 'driver' => 'redis', 'namespace' => ''],
+            $stampedes['recent'][0],
+        );
+    }
+
+    public function test_a_process_local_store_is_judged_per_process(): void
+    {
+        $event = static fn (float $ts, string $type, string $instance, array $extra = []): array => ['ts' => $ts, 'type' => $type, 'instance' => $instance, 'payload' => ['key' => 'report:1', 'driver' => 'ArrayStore', 'namespace' => ''] + $extra];
+        $events = [
+            // Each process writes and reads its own copy; interleaved, they are not overwriting each other.
+            $event(1.0, 'put', 'p1', ['ttl' => 600]), $event(1.1, 'put', 'p2', ['ttl' => 600]),
+            $event(1.2, 'hit', 'p1'), $event(1.3, 'hit', 'p2'),
+            // Cold per-process caches missing together are not a stampede on a shared backend.
+            $event(5.0, 'miss', 'p1'), $event(5.1, 'miss', 'p2'), $event(5.2, 'miss', 'p3'),
+        ];
+
+        $stats = Aggregator::summarize($events);
+
+        $this->assertSame(0, $stats['wasted_writes']['wasted']);
+        $this->assertSame(0, $stats['stampedes']['count']);
+
+        // The same activity on a shared store is a stampede, and p1's write was replaced before anyone read it.
+        $shared = Aggregator::summarize(array_map(static function (array $record): array {
+            $record['payload']['driver'] = 'RedisStore';
+
+            return $record;
+        }, $events));
+        $this->assertSame(1, $shared['wasted_writes']['overwritten']);
+        $this->assertSame(1, $shared['stampedes']['count']);
     }
 }

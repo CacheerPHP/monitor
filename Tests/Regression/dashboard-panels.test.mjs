@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { failoverWindowsHtml, keyPatternRowsHtml, timeSavedNote } from "../../public/assets/js/renderers.js";
+import {
+  failoverWindowsHtml,
+  keyPatternRowsHtml,
+  stampedeListHtml,
+  timeSavedNote,
+} from "../../public/assets/js/renderers.js";
 
 test("no outage explains what failover reporting needs", () => {
   const html = failoverWindowsHtml({ windows: [] });
@@ -135,5 +140,67 @@ test("a pattern row shows time saved, or that no loader timings were recorded", 
     keyPatternRowsHtml([], "time_saved"),
     /needs CacheerPHP 6\.1 or later and values cached with remember\(\) or flexible\(\)/,
   );
-  assert.match(keyPatternRowsHtml([], "misses"), /colspan="7"/);
+  assert.match(keyPatternRowsHtml([], "misses"), /colspan="8"/);
+});
+
+test("a pattern row shows its wasted writes against the writes with a known outcome", () => {
+  const base = {
+    pattern: "report:{id}",
+    driver: "RedisStore",
+    namespace: "",
+    keys: 2,
+    examples: ["report:1"],
+    lookups: 0,
+    hits: 0,
+    misses: 0,
+    hit_rate: null,
+    latency: {},
+    latency_samples: 0,
+    loader_runs: 0,
+    time_saved_ms: null,
+  };
+
+  assert.match(
+    keyPatternRowsHtml([{ ...base, wasted_writes: 3, evaluated_writes: 5 }], "wasted_writes"),
+    /<td>3 of 5<small class="key-context">ended before any read<\/small><\/td><\/tr>/,
+  );
+  assert.match(
+    keyPatternRowsHtml([{ ...base, wasted_writes: 0, evaluated_writes: 0 }]),
+    /<td>—<small class="key-context">no known outcome<\/small><\/td><\/tr>/,
+  );
+  assert.match(keyPatternRowsHtml([], "wasted_writes"), /every write with a known outcome was read/);
+});
+
+test("a stampede lists its key escaped, its burst, and the work it repeated", () => {
+  const html = stampedeListHtml({
+    recent: [
+      {
+        key: "report:<1>",
+        driver: "RedisStore",
+        namespace: "",
+        start: 1_700_000_000,
+        duration_seconds: 0.3,
+        misses: 4,
+        processes: 3,
+        loader_runs: 3,
+      },
+      {
+        key: "legacy:1",
+        driver: "FileStore",
+        namespace: null,
+        start: 1_700_000_100,
+        duration_seconds: 1.5,
+        misses: 3,
+        processes: 2,
+        loader_runs: 0,
+      },
+    ],
+  });
+
+  assert.match(html, /<strong>report:&lt;1&gt;<\/strong>/);
+  assert.match(html, /4 misses in under a second · 3 processes · 3 loader runs/);
+  assert.match(html, /Work repeated/);
+  assert.match(html, /FileStore · namespace unreported/);
+  assert.match(html, /3 misses in 2s · 2 processes · loader runs not reported/);
+  assert.match(stampedeListHtml({ recent: [] }), /No stampede recorded/);
 });

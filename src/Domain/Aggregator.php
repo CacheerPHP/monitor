@@ -33,6 +33,30 @@ final class Aggregator
 
     private const PATTERN_EXAMPLES = 3;
 
+    /** Writes that store a value someone may read; counters, renews, and tags are not. */
+    private const VALUE_WRITES = ['put' => true, 'put_forever' => true, 'put_many' => true, 'add' => true];
+
+    /**
+     * Drivers whose entries live in one process. Their writes, reads, and
+     * misses are judged per process: another process "overwriting" or missing
+     * the same key never touched this process's copy.
+     */
+    private const PROCESS_LOCAL_DRIVERS = ['ArrayStore' => true];
+
+    /** Record types a key's timeline needs for wasted writes and stampedes. */
+    private const TIMELINE_TYPES = self::VALUE_WRITES + ['hit' => true, 'miss' => true, 'clear' => true, 'computed' => true];
+
+    /**
+     * A stampede: at least STAMPEDE_MIN_MISSES misses on one key within
+     * STAMPEDE_WINDOW_SECONDS, from at least two processes. One process
+     * missing in a loop is not a stampede.
+     */
+    public const STAMPEDE_WINDOW_SECONDS = 2.0;
+
+    public const STAMPEDE_MIN_MISSES = 3;
+
+    private const STAMPEDES_LISTED = 10;
+
     /**
      * Compute summary statistics (hits, misses, rates, latency, TTL distribution, etc.).
      *
@@ -72,6 +96,9 @@ final class Aggregator
         $keys = [];
         $patterns = [];
         $patternOf = [];
+        $timelines = [];
+        $timelineKeys = [];
+        $logEnd = null;
         $failoverEvents = [];
 
         foreach ($events as $eventRecord) {
@@ -82,6 +109,9 @@ final class Aggregator
 
             if ($stats['since'] === null || ($ts && $ts < $stats['since'])) {
                 $stats['since'] = $ts;
+            }
+            if (is_numeric($ts) && ($logEnd === null || $ts > $logEnd)) {
+                $logEnd = (float) $ts;
             }
 
             $stats['drivers'][$driver] = ($stats['drivers'][$driver] ?? 0) + 1;
@@ -202,6 +232,19 @@ final class Aggregator
                         $patterns[$patternIdentity]['hit_samples']++;
                     }
                 }
+                // Per-key timelines for wasted writes and stampedes, kept compact.
+                if (isset(self::TIMELINE_TYPES[$type]) && is_numeric($ts)) {
+                    $timelineKey = isset(self::PROCESS_LOCAL_DRIVERS[$driver])
+                        ? $identity . "\0" . ($eventRecord['instance'] ?? '')
+                        : $identity;
+                    $timelineKeys[$timelineKey] = $identity;
+                    $timelines[$timelineKey][] = [
+                        (float) $ts,
+                        $type,
+                        array_key_exists('ttl', $payload) ? $payload['ttl'] : false,
+                        $eventRecord['instance'] ?? null,
+                    ];
+                }
                 if ($type === 'computed') {
                     $loaderMs = $payload['duration_ms'] ?? null;
                     if (is_numeric($loaderMs) && is_finite((float) $loaderMs) && $loaderMs >= 0) {
@@ -225,6 +268,14 @@ final class Aggregator
         $stats['latency'] = self::latency($latencySamples);
         $stats['latency_samples'] = count($latencySamples);
         $stats['computed']['total_ms'] = round($stats['computed']['total_ms'], 3);
+        [$wastedWrites, $stats['stampedes']] = self::wastedWork($timelines, $timelineKeys, $keys, $logEnd);
+        foreach ($wastedWrites['per_key'] as $timelineKey => $outcome) {
+            $patternIdentity = $patternOf[$timelineKeys[$timelineKey]];
+            $patterns[$patternIdentity]['wasted_writes'] = ($patterns[$patternIdentity]['wasted_writes'] ?? 0) + $outcome['wasted'];
+            $patterns[$patternIdentity]['evaluated_writes'] = ($patterns[$patternIdentity]['evaluated_writes'] ?? 0) + $outcome['evaluated'];
+        }
+        unset($wastedWrites['per_key']);
+        $stats['wasted_writes'] = $wastedWrites;
         $stats['key_patterns'] = self::rankPatterns($patterns);
         $stats['time_saved'] = self::timeSaved($stats['key_patterns']['rows']);
         unset($stats['key_patterns']['rows']);
@@ -397,6 +448,8 @@ final class Aggregator
                 'loader_runs'     => $pattern['loader_runs'],
                 'loader_avg_ms'   => $pattern['loader_runs'] > 0 ? round($pattern['loader_ms'] / $pattern['loader_runs'], 3) : null,
                 'time_saved_ms'   => self::patternTimeSaved($pattern),
+                'wasted_writes'   => $pattern['wasted_writes'] ?? 0,
+                'evaluated_writes' => $pattern['evaluated_writes'] ?? 0,
             ];
         }
 
@@ -422,6 +475,10 @@ final class Aggregator
                     static fn (array $row): bool => $row['lookups'] >= self::PATTERN_MIN_LOOKUPS,
                     static fn (array $a, array $b): int => $a['hit_rate'] <=> $b['hit_rate'],
                 ),
+                'wasted_writes' => $rank(
+                    static fn (array $row): bool => $row['wasted_writes'] > 0,
+                    static fn (array $a, array $b): int => $b['wasted_writes'] <=> $a['wasted_writes'],
+                ),
                 'misses' => $rank(
                     static fn (array $row): bool => $row['misses'] > 0,
                     static fn (array $a, array $b): int => $b['misses'] <=> $a['misses'],
@@ -436,6 +493,128 @@ final class Aggregator
                 ),
             ],
         ];
+    }
+
+    /**
+     * Wasted writes and stampedes, from each key's events in time order.
+     *
+     * A value write is wasted when it ends before any hit reads it: written
+     * again, deleted, or — when its TTL was reported — expired before the end
+     * of the log. A write that may still be live, or whose TTL is unknown, has
+     * no known outcome and is not counted either way. Store-wide clears carry no
+     * key and are not attributed to individual writes.
+     *
+     * @param array<string,list<array{0: float, 1: string, 2: mixed, 3: mixed}>> $timelines
+     * @param array<string,string> $timelineKeys timeline key => key identity
+     * @param array<string,array<string,mixed>> $keys key identity => key row (for names)
+     * @return array{0: array<string,mixed>, 1: array<string,mixed>}
+     */
+    private static function wastedWork(array $timelines, array $timelineKeys, array $keys, ?float $logEnd): array
+    {
+        $wasted = ['wasted' => 0, 'overwritten' => 0, 'deleted' => 0, 'expired' => 0, 'evaluated' => 0, 'per_key' => []];
+        $stampedes = [];
+
+        foreach ($timelines as $identity => $timeline) {
+            usort($timeline, static fn (array $a, array $b): int => $a[0] <=> $b[0]);
+            $outcome = ['wasted' => 0, 'evaluated' => 0];
+            $misses = 0;
+            $pending = null; // [ts, ttl seconds|null forever|false unknown, read]
+
+            $end = static function (string $how) use (&$pending, &$outcome, &$wasted): void {
+                $outcome['evaluated']++;
+                $wasted['evaluated']++;
+                if (!$pending[2]) {
+                    $outcome['wasted']++;
+                    $wasted['wasted']++;
+                    $wasted[$how]++;
+                }
+                $pending = null;
+            };
+
+            foreach ($timeline as [$ts, $type, $ttl]) {
+                if ($pending !== null && is_numeric($pending[1]) && $ts > $pending[0] + (float) $pending[1]) {
+                    $end('expired');
+                }
+                if (isset(self::VALUE_WRITES[$type])) {
+                    if ($pending !== null) {
+                        $end('overwritten');
+                    }
+                    $pending = [$ts, $type === 'put_forever' ? null : $ttl, false];
+                } elseif ($type === 'hit' && $pending !== null) {
+                    $pending[2] = true;
+                } elseif ($type === 'clear' && $pending !== null) {
+                    $end('deleted');
+                } elseif ($type === 'miss') {
+                    $misses++;
+                }
+            }
+
+            if ($pending !== null && $logEnd !== null && is_numeric($pending[1]) && $pending[0] + (float) $pending[1] <= $logEnd) {
+                $end('expired');
+            } elseif ($pending !== null && $pending[2]) {
+                // Read and possibly still live: its outcome is already known to be useful.
+                $outcome['evaluated']++;
+                $wasted['evaluated']++;
+            }
+
+            $wasted['per_key'][$identity] = $outcome;
+
+            $key = $keys[$timelineKeys[$identity]];
+            foreach ($misses >= self::STAMPEDE_MIN_MISSES ? self::stampedesIn($timeline) : [] as $stampede) {
+                $stampedes[] = $stampede + ['key' => $key['key'], 'driver' => $key['driver'], 'namespace' => $key['namespace']];
+            }
+        }
+
+        usort($stampedes, static fn (array $a, array $b): int => $b['start'] <=> $a['start']);
+
+        return [$wasted, [
+            'count' => count($stampedes),
+            'loader_runs' => array_sum(array_column($stampedes, 'loader_runs')),
+            'window_seconds' => self::STAMPEDE_WINDOW_SECONDS,
+            'min_misses' => self::STAMPEDE_MIN_MISSES,
+            'recent' => array_slice($stampedes, 0, self::STAMPEDES_LISTED),
+        ]];
+    }
+
+    /**
+     * @param list<array{0: float, 1: string, 2: mixed, 3: mixed}> $timeline sorted by time
+     * @return list<array<string,mixed>>
+     */
+    private static function stampedesIn(array $timeline): array
+    {
+        $misses = array_values(array_filter($timeline, static fn (array $event): bool => $event[1] === 'miss'));
+        $found = [];
+        $first = 0;
+        $count = count($misses);
+
+        while ($first < $count) {
+            $last = $first;
+            while ($last + 1 < $count && $misses[$last + 1][0] - $misses[$first][0] <= self::STAMPEDE_WINDOW_SECONDS) {
+                $last++;
+            }
+
+            $burst = array_slice($misses, $first, $last - $first + 1);
+            $processes = count(array_unique(array_map(static fn (array $event): string => (string) $event[3], $burst)));
+
+            if (count($burst) >= self::STAMPEDE_MIN_MISSES && $processes >= 2) {
+                $start = $burst[0][0];
+                $finish = $burst[count($burst) - 1][0];
+                $found[] = [
+                    'start' => $start,
+                    'duration_seconds' => round($finish - $start, 3),
+                    'misses' => count($burst),
+                    'processes' => $processes,
+                    // Loader runs during the burst and the window after it: the duplicated work.
+                    'loader_runs' => count(array_filter($timeline, static fn (array $event): bool => $event[1] === 'computed'
+                        && $event[0] >= $start && $event[0] <= $finish + self::STAMPEDE_WINDOW_SECONDS)),
+                ];
+                $first = $last + 1;
+            } else {
+                $first++;
+            }
+        }
+
+        return $found;
     }
 
     /**

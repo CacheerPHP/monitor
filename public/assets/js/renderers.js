@@ -177,6 +177,52 @@ export function renderProblemKeysTable(tbodyElement, entries, onKeyClick, rankin
   }
 }
 
+export function renderWastedWork(metrics, listElement) {
+  const wasted = metrics?.wasted_writes || {};
+  const stampedes = metrics?.stampedes || {};
+  setTextById("wasted_writes", formatNumber(wasted.wasted || 0));
+  setTextById(
+    "wasted_writes_detail",
+    wasted.evaluated
+      ? `Of ${formatNumber(wasted.evaluated)} writes with a known outcome`
+      : "No write has a known outcome yet",
+  );
+  setTextById("wasted_expired", formatNumber(wasted.expired || 0));
+  setTextById("stampede_count", formatNumber(stampedes.count || 0));
+  setTextById("stampede_loader_runs", formatNumber(stampedes.loader_runs || 0));
+  if (stampedes.min_misses) {
+    setTextById(
+      "stampede_rule",
+      `${stampedes.min_misses}+ misses on one key within ${stampedes.window_seconds} s, from 2+ processes`,
+    );
+  }
+  if (listElement) {
+    listElement.innerHTML = stampedeListHtml(stampedes);
+  }
+}
+
+/**
+ * Recent stampedes, newest first. Keys come from telemetry, so every value is escaped.
+ */
+export function stampedeListHtml(stampedes) {
+  const recent = Array.isArray(stampedes?.recent) ? stampedes.recent : [];
+  if (!recent.length) {
+    return `<li class="failover-empty">No stampede recorded.</li>`;
+  }
+  return recent
+    .map((stampede) => {
+      const namespace = stampede.namespace === null ? "namespace unreported" : stampede.namespace || "default";
+      const runs = Number(stampede.loader_runs || 0);
+      const details = [
+        `${formatNumber(stampede.misses)} misses in ${formatDuration(stampede.duration_seconds)}`,
+        `${formatNumber(stampede.processes)} processes`,
+        runs ? `${formatNumber(runs)} loader run${runs === 1 ? "" : "s"}` : "loader runs not reported",
+      ].join(" · ");
+      return `<li class="failover-window"><div><strong>${escapeHtml(stampede.key)}</strong><span>${escapeHtml(formatTimestamp(stampede.start))} · ${escapeHtml(stampede.driver)} · ${escapeHtml(namespace)}</span><span>${escapeHtml(details)}</span></div><span class="event-badge ${runs > 1 ? "circuit_opened" : "miss"}">${runs > 1 ? "Work repeated" : "Burst of misses"}</span></li>`;
+    })
+    .join("");
+}
+
 /**
  * The efficiency card's headline, or null when no loader timings were recorded
  * (CacheerPHP 6.0, or caches filled with set() rather than remember()).
@@ -201,8 +247,10 @@ export function keyPatternRowsHtml(entries, ranking = "hit_rate", minLookups = 2
         ? `No key pattern has ${formatNumber(minLookups)} or more lookups yet.`
         : ranking === "time_saved"
           ? "No loader timings yet. Time saved needs CacheerPHP 6.1 or later and values cached with remember() or flexible()."
-          : `No recorded ${{ misses: "misses", lookups: "lookups", latency: "timed operations" }[ranking] || "activity"} for matching keys.`;
-    return `<tr><td colspan="7"><div class="empty-inline">${message}</div></td></tr>`;
+          : ranking === "wasted_writes"
+            ? "No wasted writes: every write with a known outcome was read."
+            : `No recorded ${{ misses: "misses", lookups: "lookups", latency: "timed operations" }[ranking] || "activity"} for matching keys.`;
+    return `<tr><td colspan="8"><div class="empty-inline">${message}</div></td></tr>`;
   }
   return entries
     .map((entry) => {
@@ -214,7 +262,11 @@ export function keyPatternRowsHtml(entries, ranking = "hit_rate", minLookups = 2
       const saved = isFiniteNumber(entry.time_saved_ms)
         ? `${formatMilliseconds(entry.time_saved_ms)}<small class="key-context">${formatNumber(runs)} loader run${runs === 1 ? "" : "s"} · avg ${formatMilliseconds(entry.loader_avg_ms)}</small>`
         : `—<small class="key-context">no loader timings</small>`;
-      return `<tr><td><span class="pattern-name">${escapeHtml(entry.pattern)}</span><small class="key-context">${escapeHtml(entry.driver)} · ${escapeHtml(namespace)}</small><small class="key-context">e.g. ${examples}</small></td><td>${formatNumber(entry.keys)}</td><td>${formatNumber(entry.lookups)}</td><td>${entry.hit_rate === null ? "—" : formatPercent(entry.hit_rate)}</td><td>${formatNumber(entry.misses)}</td><td>${timing}<small class="key-context">${formatNumber(entry.latency_samples)} timed samples</small></td><td>${saved}</td></tr>`;
+      const evaluated = Number(entry.evaluated_writes || 0);
+      const wastedWrites = evaluated
+        ? `${formatNumber(entry.wasted_writes)} of ${formatNumber(evaluated)}<small class="key-context">ended before any read</small>`
+        : `—<small class="key-context">no known outcome</small>`;
+      return `<tr><td><span class="pattern-name">${escapeHtml(entry.pattern)}</span><small class="key-context">${escapeHtml(entry.driver)} · ${escapeHtml(namespace)}</small><small class="key-context">e.g. ${examples}</small></td><td>${formatNumber(entry.keys)}</td><td>${formatNumber(entry.lookups)}</td><td>${entry.hit_rate === null ? "—" : formatPercent(entry.hit_rate)}</td><td>${formatNumber(entry.misses)}</td><td>${timing}<small class="key-context">${formatNumber(entry.latency_samples)} timed samples</small></td><td>${saved}</td><td>${wastedWrites}</td></tr>`;
     })
     .join("");
 }
