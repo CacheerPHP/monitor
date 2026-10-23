@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { failoverWindowsHtml, keyPatternRowsHtml } from "../../public/assets/js/renderers.js";
+import { failoverWindowsHtml, keyPatternRowsHtml, timeSavedNote } from "../../public/assets/js/renderers.js";
 
 test("no outage explains what failover reporting needs", () => {
   const html = failoverWindowsHtml({ windows: [] });
@@ -91,4 +91,49 @@ test("an unreported namespace is labeled, not shown as the default", () => {
 
   assert.match(html, /FileStore · namespace unreported/);
   assert.match(html, /<td>—<small/);
+});
+
+test("time saved is stated as an estimate with its loader runs", () => {
+  assert.equal(
+    timeSavedNote({ estimated_ms: 15_120_000, patterns: 4, hits: 9000, loader_runs: 312 }),
+    "≈ 4.2 h of loader time saved (estimate from 312 loader runs).",
+  );
+  assert.equal(
+    timeSavedNote({ estimated_ms: 980, loader_runs: 1 }),
+    "≈ 980 ms of loader time saved (estimate from 1 loader run).",
+  );
+  assert.equal(timeSavedNote({ estimated_ms: null, loader_runs: 0 }), null);
+  assert.equal(timeSavedNote(undefined), null);
+});
+
+test("a pattern row shows time saved, or that no loader timings were recorded", () => {
+  const base = {
+    driver: "RedisStore",
+    namespace: "",
+    keys: 2,
+    examples: ["report:1"],
+    lookups: 12,
+    hits: 10,
+    misses: 2,
+    hit_rate: 10 / 12,
+    latency: { avg_ms: 2, p95_ms: 2 },
+    latency_samples: 12,
+  };
+
+  assert.match(
+    keyPatternRowsHtml(
+      [{ ...base, pattern: "report:{id}", loader_runs: 2, loader_avg_ms: 400, time_saved_ms: 3980 }],
+      "time_saved",
+    ),
+    /<td>4\.0 s<small class="key-context">2 loader runs · avg 400 ms<\/small><\/td>/,
+  );
+  assert.match(
+    keyPatternRowsHtml([{ ...base, pattern: "config:{id}", loader_runs: 0, loader_avg_ms: null, time_saved_ms: null }]),
+    /<td>—<small class="key-context">no loader timings<\/small><\/td>/,
+  );
+  assert.match(
+    keyPatternRowsHtml([], "time_saved"),
+    /needs CacheerPHP 6\.1 or later and values cached with remember\(\) or flexible\(\)/,
+  );
+  assert.match(keyPatternRowsHtml([], "misses"), /colspan="7"/);
 });

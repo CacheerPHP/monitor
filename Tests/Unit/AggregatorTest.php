@@ -350,4 +350,50 @@ class AggregatorTest extends TestCase
         $this->assertSame(['order:{id}'], array_column($patterns['rankings']['lookups'], 'pattern'));
         $this->assertNull($patterns['rankings']['lookups'][0]['namespace'], 'An unreported namespace stays unreported.');
     }
+
+    public function test_time_saved_is_estimated_from_loader_runs_and_hit_cost(): void
+    {
+        $events = [
+            // report:{id} — two loader runs averaging 400 ms, then 10 hits at 2 ms each.
+            ['ts' => 1.0, 'type' => 'miss', 'payload' => ['key' => 'report:1', 'driver' => 'redis', 'namespace' => '', 'duration_ms' => 2.0]],
+            ['ts' => 1.1, 'type' => 'computed', 'payload' => ['key' => 'report:1', 'driver' => 'redis', 'namespace' => '', 'duration_ms' => 300.0, 'operation' => 'remember']],
+            ['ts' => 2.0, 'type' => 'miss', 'payload' => ['key' => 'report:2', 'driver' => 'redis', 'namespace' => '', 'duration_ms' => 2.0]],
+            ['ts' => 2.1, 'type' => 'computed', 'payload' => ['key' => 'report:2', 'driver' => 'redis', 'namespace' => '', 'duration_ms' => 500.0, 'operation' => 'remember']],
+        ];
+        for ($i = 0; $i < 10; $i++) {
+            $events[] = ['ts' => 3.0 + $i, 'type' => 'hit', 'payload' => ['key' => 'report:' . ($i % 2 + 1), 'driver' => 'redis', 'namespace' => '', 'duration_ms' => 2.0]];
+        }
+        // config:{id} — filled with set(): hits, but no loader runs, so no estimate.
+        $events[] = ['ts' => 20.0, 'type' => 'hit', 'payload' => ['key' => 'config:1', 'driver' => 'redis', 'namespace' => '', 'duration_ms' => 1.0]];
+        // fast:{id} — a loader cheaper than the hit itself saves nothing, never a negative amount.
+        $events[] = ['ts' => 21.0, 'type' => 'computed', 'payload' => ['key' => 'fast:1', 'driver' => 'redis', 'namespace' => '', 'duration_ms' => 0.5]];
+        $events[] = ['ts' => 22.0, 'type' => 'hit', 'payload' => ['key' => 'fast:1', 'driver' => 'redis', 'namespace' => '', 'duration_ms' => 3.0]];
+
+        $stats = Aggregator::summarize($events);
+        $ranked = $stats['key_patterns']['rankings']['time_saved'];
+
+        $this->assertSame(['report:{id}', 'fast:{id}'], array_column($ranked, 'pattern'), 'Patterns without loader runs are not ranked.');
+        $this->assertSame(2, $ranked[0]['loader_runs']);
+        $this->assertSame(400.0, $ranked[0]['loader_avg_ms']);
+        $this->assertSame(3980.0, $ranked[0]['time_saved_ms'], '10 hits × (400 ms loader − 2 ms hit).');
+        $this->assertSame(0.0, $ranked[1]['time_saved_ms']);
+
+        $this->assertSame(['estimated_ms' => 3980.0, 'patterns' => 2, 'hits' => 11, 'loader_runs' => 3], $stats['time_saved']);
+        $this->assertSame(14, $stats['latency_samples'], '2 misses and 12 hits; the 3 loader runs stay out of cache latency.');
+
+        $config = array_values(array_filter($stats['key_patterns']['rankings']['lookups'], static fn (array $row): bool => $row['pattern'] === 'config:{id}'));
+        $this->assertNull($config[0]['time_saved_ms']);
+        $this->assertNull($config[0]['loader_avg_ms']);
+    }
+
+    public function test_without_loader_runs_time_saved_is_unknown_not_zero(): void
+    {
+        $stats = Aggregator::summarize([
+            ['ts' => 1.0, 'type' => 'hit', 'payload' => ['key' => 'user:1', 'driver' => 'redis', 'duration_ms' => 1.0]],
+        ]);
+
+        $this->assertNull($stats['time_saved']['estimated_ms']);
+        $this->assertSame([], $stats['key_patterns']['rankings']['time_saved']);
+        $this->assertArrayNotHasKey('rows', $stats['key_patterns']);
+    }
 }

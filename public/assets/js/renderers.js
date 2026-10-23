@@ -55,7 +55,8 @@ export function updateMetricCards(metrics) {
   document.querySelector(".error-stat")?.classList.toggle("has-errors", Number(metrics?.errors ?? 0) > 0);
   setTextById(
     "efficiencyNote",
-    lookups ? "Lookups served directly from your cache." : "Waiting for your application's activity.",
+    timeSavedNote(metrics?.time_saved) ||
+      (lookups ? "Lookups served directly from your cache." : "Waiting for your application's activity."),
   );
 }
 
@@ -177,6 +178,19 @@ export function renderProblemKeysTable(tbodyElement, entries, onKeyClick, rankin
 }
 
 /**
+ * The efficiency card's headline, or null when no loader timings were recorded
+ * (CacheerPHP 6.0, or caches filled with set() rather than remember()).
+ */
+export function timeSavedNote(timeSaved) {
+  const estimated = timeSaved?.estimated_ms;
+  if (!isFiniteNumber(estimated)) {
+    return null;
+  }
+  const runs = Number(timeSaved.loader_runs || 0);
+  return `≈ ${formatMilliseconds(estimated)} of loader time saved (estimate from ${formatNumber(runs)} loader run${runs === 1 ? "" : "s"}).`;
+}
+
+/**
  * Rows for the key patterns table. Patterns and example keys come from
  * telemetry, so every value is escaped.
  */
@@ -185,8 +199,10 @@ export function keyPatternRowsHtml(entries, ranking = "hit_rate", minLookups = 2
     const message =
       ranking === "hit_rate"
         ? `No key pattern has ${formatNumber(minLookups)} or more lookups yet.`
-        : `No recorded ${{ misses: "misses", lookups: "lookups", latency: "timed operations" }[ranking] || "activity"} for matching keys.`;
-    return `<tr><td colspan="6"><div class="empty-inline">${message}</div></td></tr>`;
+        : ranking === "time_saved"
+          ? "No loader timings yet. Time saved needs CacheerPHP 6.1 or later and values cached with remember() or flexible()."
+          : `No recorded ${{ misses: "misses", lookups: "lookups", latency: "timed operations" }[ranking] || "activity"} for matching keys.`;
+    return `<tr><td colspan="7"><div class="empty-inline">${message}</div></td></tr>`;
   }
   return entries
     .map((entry) => {
@@ -194,7 +210,11 @@ export function keyPatternRowsHtml(entries, ranking = "hit_rate", minLookups = 2
       const examples = (entry.examples || []).map((key) => escapeHtml(key)).join(", ");
       const timing =
         entry.latency_samples > 0 ? `${entry.latency.avg_ms.toFixed(1)} / ${entry.latency.p95_ms.toFixed(1)} ms` : "—";
-      return `<tr><td><span class="pattern-name">${escapeHtml(entry.pattern)}</span><small class="key-context">${escapeHtml(entry.driver)} · ${escapeHtml(namespace)}</small><small class="key-context">e.g. ${examples}</small></td><td>${formatNumber(entry.keys)}</td><td>${formatNumber(entry.lookups)}</td><td>${entry.hit_rate === null ? "—" : formatPercent(entry.hit_rate)}</td><td>${formatNumber(entry.misses)}</td><td>${timing}<small class="key-context">${formatNumber(entry.latency_samples)} timed samples</small></td></tr>`;
+      const runs = Number(entry.loader_runs || 0);
+      const saved = isFiniteNumber(entry.time_saved_ms)
+        ? `${formatMilliseconds(entry.time_saved_ms)}<small class="key-context">${formatNumber(runs)} loader run${runs === 1 ? "" : "s"} · avg ${formatMilliseconds(entry.loader_avg_ms)}</small>`
+        : `—<small class="key-context">no loader timings</small>`;
+      return `<tr><td><span class="pattern-name">${escapeHtml(entry.pattern)}</span><small class="key-context">${escapeHtml(entry.driver)} · ${escapeHtml(namespace)}</small><small class="key-context">e.g. ${examples}</small></td><td>${formatNumber(entry.keys)}</td><td>${formatNumber(entry.lookups)}</td><td>${entry.hit_rate === null ? "—" : formatPercent(entry.hit_rate)}</td><td>${formatNumber(entry.misses)}</td><td>${timing}<small class="key-context">${formatNumber(entry.latency_samples)} timed samples</small></td><td>${saved}</td></tr>`;
     })
     .join("");
 }
@@ -380,6 +400,19 @@ function formatJsonPreview(raw) {
   } catch (_) {
     return raw;
   }
+}
+function formatMilliseconds(value) {
+  const ms = Math.max(0, Number(value) || 0);
+  if (ms < 1000) {
+    return `${ms < 10 ? ms.toFixed(1) : Math.round(ms)} ms`;
+  }
+  if (ms < 60_000) {
+    return `${(ms / 1000).toFixed(1)} s`;
+  }
+  if (ms < 3_600_000) {
+    return `${(ms / 60_000).toFixed(1)} min`;
+  }
+  return `${(ms / 3_600_000).toFixed(1)} h`;
 }
 function formatDuration(value) {
   const seconds = Math.max(0, Number(value) || 0);

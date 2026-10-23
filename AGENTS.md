@@ -100,7 +100,10 @@ tag availability rather than copying an old pre-release instruction.
 ## Metrics and data semantics
 
 - Metrics describe recorded cache activity, not application request latency,
-  loader execution time, database query time, or a benchmark.
+  database query time, or a benchmark. Loader time (`computed`, CacheerPHP 6.1+)
+  is reported only as its own measure and as the time-saved estimate: label that
+  estimate as one, show its loader-run count, and leave it unknown (never zero)
+  for patterns with no recorded loader runs.
 - Snapshot metrics and timelines cover all matching records in the current
   log. The feed limit only limits displayed events; apply feed filters before
   the limit. Preserve `/api/metrics`' separately documented limit behavior.

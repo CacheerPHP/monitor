@@ -189,6 +189,7 @@ final class Aggregator
                 $patterns[$patternIdentity] ??= [
                     'pattern' => $pattern, 'driver' => $driver, 'namespace' => $payload['namespace'] ?? null,
                     'keys' => [], 'hits' => 0, 'misses' => 0, 'errors' => 0, 'writes' => 0, 'durations' => [],
+                    'loader_runs' => 0, 'loader_ms' => 0.0, 'hit_ms' => 0.0, 'hit_samples' => 0,
                 ];
                 $patterns[$patternIdentity]['keys'][$key] = true;
                 if ($counter !== null) {
@@ -196,6 +197,17 @@ final class Aggregator
                 }
                 if ($durationMs !== null) {
                     $patterns[$patternIdentity]['durations'][] = $durationMs;
+                    if ($type === 'hit') {
+                        $patterns[$patternIdentity]['hit_ms'] += $durationMs;
+                        $patterns[$patternIdentity]['hit_samples']++;
+                    }
+                }
+                if ($type === 'computed') {
+                    $loaderMs = $payload['duration_ms'] ?? null;
+                    if (is_numeric($loaderMs) && is_finite((float) $loaderMs) && $loaderMs >= 0) {
+                        $patterns[$patternIdentity]['loader_runs']++;
+                        $patterns[$patternIdentity]['loader_ms'] += (float) $loaderMs;
+                    }
                 }
             }
         }
@@ -214,6 +226,8 @@ final class Aggregator
         $stats['latency_samples'] = count($latencySamples);
         $stats['computed']['total_ms'] = round($stats['computed']['total_ms'], 3);
         $stats['key_patterns'] = self::rankPatterns($patterns);
+        $stats['time_saved'] = self::timeSaved($stats['key_patterns']['rows']);
+        unset($stats['key_patterns']['rows']);
         $stats['failover'] = self::failover($failoverEvents);
         $rows = [];
         foreach ($keys as $keyStats) {
@@ -380,6 +394,9 @@ final class Aggregator
                 'hit_rate'        => $lookups > 0 ? $pattern['hits'] / $lookups : null,
                 'latency'         => self::latency($pattern['durations']),
                 'latency_samples' => count($pattern['durations']),
+                'loader_runs'     => $pattern['loader_runs'],
+                'loader_avg_ms'   => $pattern['loader_runs'] > 0 ? round($pattern['loader_ms'] / $pattern['loader_runs'], 3) : null,
+                'time_saved_ms'   => self::patternTimeSaved($pattern),
             ];
         }
 
@@ -395,7 +412,12 @@ final class Aggregator
         return [
             'count'       => count($rows),
             'min_lookups' => self::PATTERN_MIN_LOOKUPS,
+            'rows'        => $rows,
             'rankings'    => [
+                'time_saved' => $rank(
+                    static fn (array $row): bool => $row['time_saved_ms'] !== null,
+                    static fn (array $a, array $b): int => $b['time_saved_ms'] <=> $a['time_saved_ms'],
+                ),
                 'hit_rate' => $rank(
                     static fn (array $row): bool => $row['lookups'] >= self::PATTERN_MIN_LOOKUPS,
                     static fn (array $a, array $b): int => $a['hit_rate'] <=> $b['hit_rate'],
@@ -413,6 +435,54 @@ final class Aggregator
                     static fn (array $a, array $b): int => $b['latency']['p95_ms'] <=> $a['latency']['p95_ms'],
                 ),
             ],
+        ];
+    }
+
+    /**
+     * An estimate: each hit would otherwise have run the loader once, at the
+     * pattern's average loader time, minus what the hit itself cost. Patterns
+     * with no recorded loader runs have no estimate (null), never zero.
+     *
+     * @param array<string,mixed> $pattern
+     */
+    private static function patternTimeSaved(array $pattern): ?float
+    {
+        if ($pattern['loader_runs'] === 0) {
+            return null;
+        }
+
+        $loaderAvg = $pattern['loader_ms'] / $pattern['loader_runs'];
+        $hitAvg = $pattern['hit_samples'] > 0 ? $pattern['hit_ms'] / $pattern['hit_samples'] : 0.0;
+
+        return round($pattern['hits'] * max(0.0, $loaderAvg - $hitAvg), 3);
+    }
+
+    /**
+     * @param list<array<string,mixed>> $rows
+     * @return array<string,mixed>
+     */
+    private static function timeSaved(array $rows): array
+    {
+        $estimated = 0.0;
+        $patterns = 0;
+        $hits = 0;
+        $loaderRuns = 0;
+
+        foreach ($rows as $row) {
+            if ($row['time_saved_ms'] === null) {
+                continue;
+            }
+            $estimated += $row['time_saved_ms'];
+            $patterns++;
+            $hits += $row['hits'];
+            $loaderRuns += $row['loader_runs'];
+        }
+
+        return [
+            'estimated_ms' => $patterns > 0 ? round($estimated, 3) : null,
+            'patterns'     => $patterns,
+            'hits'         => $hits,
+            'loader_runs'  => $loaderRuns,
         ];
     }
 
