@@ -122,9 +122,12 @@ It reports which step failed and what to do about it. The most common cause is t
 
 The `JsonlReporter` is built for production:
 
+- **Buffered writes** — events are written in batches, so a cache operation costs about 2.5 µs more with Monitor installed, rather than a locked file write each time
 - **File locking** — concurrent writes are safe via `.lock` files
 - **Auto-rotation** — rotates at 10 MB to prevent unbounded growth
 - **Instance IDs** — each reporter instance tags events for multi-process identification
+
+A batch is written every 256 events, on the first event at least one second after the previous write, and when the process ends — including after a fatal error. Under PHP-FPM each request's events therefore appear when the request finishes. A long-running worker (Octane, a queue worker) that goes idle writes its last events at its next cache operation or when it exits; call `$reporter->flush()` to write them sooner. Events from different processes interleave in the file by batch, so the dashboard orders them by timestamp.
 
 ### Instrumenting one cache only
 

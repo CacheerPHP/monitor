@@ -10,9 +10,22 @@ use Cacheer\Monitor\Support\Path;
 
 /**
  * Reporter that appends events to a JSONL file with file rotation.
+ *
+ * Events are buffered in memory and appended in batches, because this runs on
+ * every cache operation: a locked append per event cost ~30 µs, and workers
+ * sharing the file queued on its lock. A batch is written when it reaches
+ * $maxBufferedEvents or BUFFER_BYTES, when $maxBufferedSeconds have passed since
+ * the last write (checked on the next event), on flush(), at shutdown — which
+ * PHP also runs after a fatal error — and when the reporter is destroyed.
+ *
+ * Within a process, lines keep their order. Across processes they interleave by
+ * batch, so readers order events by their timestamp, not their file position.
  */
 final class JsonlReporter implements MetricsReporterInterface
 {
+    /** Flush before the buffer grows past this, whatever the event count. */
+    private const BUFFER_BYTES = 262144;
+
     private string $filePath;
 
     private ?int $maxBytes;
@@ -22,13 +35,29 @@ final class JsonlReporter implements MetricsReporterInterface
     /** @var resource|null Reused lock-file handle, opened lazily on first write. */
     private $lockHandle = null;
 
+    /** @var list<string> Encoded lines not yet written. */
+    private array $buffer = [];
+
+    private int $bufferedBytes = 0;
+
+    private float $lastFlushAt;
+
+    private bool $shutdownRegistered = false;
+
     /**
-     * @param string|null $filePath   Explicit events file path (optional)
-     * @param int|null    $maxBytes   Max file size before rotation (null to disable)
-     * @param string|null $instanceId Optional instance id for tagging events
+     * @param string|null $filePath           Explicit events file path (optional)
+     * @param int|null    $maxBytes           Max file size before rotation (null to disable)
+     * @param string|null $instanceId         Optional instance id for tagging events
+     * @param int         $maxBufferedEvents  Write once this many events are buffered (1 writes every event)
+     * @param float       $maxBufferedSeconds Write on the next event once this long has passed since the last write
      */
-    public function __construct(?string $filePath = null, ?int $maxBytes = 10485760, ?string $instanceId = null)
-    {
+    public function __construct(
+        ?string $filePath = null,
+        ?int $maxBytes = 10485760,
+        ?string $instanceId = null,
+        private int $maxBufferedEvents = 256,
+        private float $maxBufferedSeconds = 1.0,
+    ) {
         $resolved = null;
         if ($filePath && $filePath !== '') {
             $resolved = Path::resolve($filePath, Env::root());
@@ -48,6 +77,8 @@ final class JsonlReporter implements MetricsReporterInterface
         $this->filePath = $resolved;
         $this->maxBytes = $maxBytes;
         $this->instanceId = $instanceId ?: bin2hex(random_bytes(4));
+        $this->maxBufferedEvents = max(1, $this->maxBufferedEvents);
+        $this->lastFlushAt = microtime(true);
         $this->ensureDir();
     }
 
@@ -64,42 +95,119 @@ final class JsonlReporter implements MetricsReporterInterface
     }
 
     /**
-     * Append a single event to the JSONL file.
-     *
-     * Uses a lock file to serialize rotation checks and writes,
-     * preventing race conditions between concurrent processes.
+     * Buffer one event; write the buffer when it is full or old enough.
      *
      * @param string $type
      * @param array<string,mixed> $payload
      */
     public function event(string $type, array $payload = []): void
     {
-        $record = [
-            'ts' => microtime(true),
+        $now = microtime(true);
+        $line = json_encode([
+            'ts' => $now,
             'type' => $type,
             'instance' => $this->instanceId,
             'payload' => $payload,
-        ];
-        $line = json_encode($record, JSON_UNESCAPED_SLASHES) . PHP_EOL;
-        $lineBytes = strlen($line);
+        ], JSON_UNESCAPED_SLASHES);
+
+        if ($line === false) {
+            return;
+        }
+
+        $line .= PHP_EOL;
+        $this->buffer[] = $line;
+        $this->bufferedBytes += strlen($line);
+
+        if (!$this->shutdownRegistered) {
+            $this->registerShutdownFlush();
+        }
+
+        if (
+            count($this->buffer) >= $this->maxBufferedEvents
+            || $this->bufferedBytes >= self::BUFFER_BYTES
+            || $now - $this->lastFlushAt >= $this->maxBufferedSeconds
+        ) {
+            $this->flush();
+        }
+    }
+
+    /**
+     * Write every buffered event, under the events file's lock.
+     *
+     * Rotation is checked between lines, so a batch splits across files at the
+     * same points that writing one event at a time would.
+     */
+    public function flush(): void
+    {
+        $this->lastFlushAt = microtime(true);
+
+        if ($this->buffer === []) {
+            return;
+        }
+
+        $lines = $this->buffer;
+        $this->buffer = [];
+        $this->bufferedBytes = 0;
 
         // Serialize rotation + write via a separate lock file. The handle is
-        // opened once and reused for the reporter's lifetime, so a high-traffic
-        // cache doesn't pay an fopen/fclose on every single operation.
+        // opened once and reused for the reporter's lifetime.
         $lockHandle = $this->lockHandle();
         if ($lockHandle === null || !flock($lockHandle, LOCK_EX)) {
             // Fallback: write without rotation protection.
-            @file_put_contents($this->filePath, $line, FILE_APPEND | LOCK_EX);
+            @file_put_contents($this->filePath, implode('', $lines), FILE_APPEND | LOCK_EX);
             return;
         }
 
         try {
-            // Rotate while holding the lock — safe from race conditions.
-            $this->rotateIfNeeded($lineBytes);
-            @file_put_contents($this->filePath, $line, FILE_APPEND);
+            $this->writeLines($lines);
         } finally {
             flock($lockHandle, LOCK_UN);
         }
+    }
+
+    /**
+     * Caller must hold the lock file.
+     *
+     * @param list<string> $lines
+     */
+    private function writeLines(array $lines): void
+    {
+        $size = $this->currentSize();
+        $chunk = '';
+
+        foreach ($lines as $line) {
+            $lineBytes = strlen($line);
+
+            if ($this->maxBytes !== null && $size > 0 && $size + $lineBytes > $this->maxBytes) {
+                if ($chunk !== '') {
+                    @file_put_contents($this->filePath, $chunk, FILE_APPEND);
+                    $chunk = '';
+                }
+                EventLogFiles::archive($this->filePath, 'rotated');
+                $size = $this->currentSize();
+            }
+
+            $chunk .= $line;
+            $size += $lineBytes;
+        }
+
+        if ($chunk !== '') {
+            @file_put_contents($this->filePath, $chunk, FILE_APPEND);
+        }
+    }
+
+    /**
+     * Flush at shutdown without keeping the reporter alive until then: a
+     * reporter that goes out of scope earlier flushes from its destructor.
+     */
+    private function registerShutdownFlush(): void
+    {
+        $this->shutdownRegistered = true;
+        $reporter = \WeakReference::create($this);
+
+        register_shutdown_function(static function () use ($reporter): void {
+            $reporter->get()?->flush();
+        });
     }
 
     /**
@@ -120,6 +228,8 @@ final class JsonlReporter implements MetricsReporterInterface
 
     public function __destruct()
     {
+        $this->flush();
+
         if (is_resource($this->lockHandle)) {
             @fclose($this->lockHandle);
             $this->lockHandle = null;
@@ -135,21 +245,14 @@ final class JsonlReporter implements MetricsReporterInterface
         }
     }
 
-    /**
-     * Rotate the file if adding bytes would exceed max threshold.
-     * Caller must hold the lock file before calling this.
-     */
-    private function rotateIfNeeded(int $incomingBytes): void
+    private function currentSize(): int
     {
         if ($this->maxBytes === null) {
-            return;
+            return 0;
         }
 
         clearstatcache(true, $this->filePath);
-        $size = file_exists($this->filePath) ? (int) filesize($this->filePath) : 0;
 
-        if ($size > 0 && ($size + $incomingBytes) > $this->maxBytes) {
-            EventLogFiles::archive($this->filePath, 'rotated');
-        }
+        return file_exists($this->filePath) ? (int) filesize($this->filePath) : 0;
     }
 }

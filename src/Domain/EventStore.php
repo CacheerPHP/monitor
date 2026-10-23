@@ -57,7 +57,18 @@ final class EventStore
             }
             $events[] = $decoded;
         }
-        return $hasFilters && $limit > 0 ? array_slice($events, -$limit) : $events;
+        if ($limit <= 0) {
+            return $events;
+        }
+
+        // Reporters write in batches, so processes interleave in the file by batch
+        // rather than by time. Order by timestamp (stable for ties) before taking
+        // the newest matches. The unfiltered fast path only reads the file's last
+        // $limit lines, so near its edge it can miss an event that arrived in a
+        // later batch with an earlier timestamp (at most one flush interval old).
+        usort($events, static fn (array $a, array $b): int => self::timestamp($a) <=> self::timestamp($b));
+
+        return $hasFilters ? array_slice($events, -$limit) : $events;
     }
 
     /**
@@ -100,12 +111,21 @@ final class EventStore
             }
             $matches[] = $decoded;
         }
-        // Newest first
+        // Newest first, by timestamp: file position is only ordered within a process.
         $matches = array_reverse($matches);
+        usort($matches, static fn (array $a, array $b): int => self::timestamp($b) <=> self::timestamp($a));
         if ($limit > 0 && count($matches) > $limit) {
             $matches = array_slice($matches, 0, $limit);
         }
         return $matches;
+    }
+
+    /**
+     * @param array<string,mixed> $event
+     */
+    private static function timestamp(array $event): float
+    {
+        return isset($event['ts']) && is_numeric($event['ts']) ? (float) $event['ts'] : 0.0;
     }
 
     /**

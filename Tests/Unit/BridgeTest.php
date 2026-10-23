@@ -55,7 +55,8 @@ class BridgeTest extends TestCase
         Telemetry::reset();
 
         $file = sys_get_temp_dir() . '/bridge-test-' . bin2hex(random_bytes(4)) . '.jsonl';
-        $listener = new CacheerMonitorListener(new JsonlReporter($file, null));
+        $reporter = new JsonlReporter($file, null);
+        $listener = new CacheerMonitorListener($reporter);
         Telemetry::listen($listener->dispatch(...));
 
         // Built through a named constructor, exactly as a consuming app would.
@@ -63,6 +64,7 @@ class BridgeTest extends TestCase
         $cache->set('user:1', 'ada');
         $cache->get('user:1');
         $cache->get('absent');
+        $reporter->flush();
 
         $this->assertFileExists($file, 'Events must reach the reporter.');
 
