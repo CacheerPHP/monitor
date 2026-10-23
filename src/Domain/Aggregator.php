@@ -60,10 +60,13 @@ final class Aggregator
     /**
      * Compute summary statistics (hits, misses, rates, latency, TTL distribution, etc.).
      *
-     * @param array<int,array<string,mixed>> $events
+     * Takes the events in one pass, so a generator can stream them from the log
+     * without holding every decoded record in memory.
+     *
+     * @param iterable<array<string,mixed>> $events
      * @return array<string,mixed>
      */
-    public static function summarize(array $events, string $keyFilter = ''): array
+    public static function summarize(iterable $events, string $keyFilter = ''): array
     {
         $stats = [
             'hits'     => 0,
@@ -82,7 +85,7 @@ final class Aggregator
             'namespaces'   => [],
             'types'        => [],
             'since'        => null,
-            'total_events' => count($events),
+            'total_events' => 0,
             'latency'      => ['avg_ms' => 0.0, 'p95_ms' => 0.0, 'p99_ms' => 0.0],
             'ttl_distribution' => self::emptyTtlBuckets(),
             'ttl_samples' => 0,
@@ -102,6 +105,7 @@ final class Aggregator
         $failoverEvents = [];
 
         foreach ($events as $eventRecord) {
+            $stats['total_events']++;
             $type    = $eventRecord['type']    ?? 'unknown';
             $payload = $eventRecord['payload'] ?? [];
             $driver  = $payload['driver']      ?? 'unknown';
@@ -768,33 +772,29 @@ final class Aggregator
     }
 
     /** Twenty buckets across the selected range, or the last ten minutes for All. */
-    public static function timeline(array $events, float $from, float $until): array
+    /**
+     * @param iterable<array<string,mixed>> $events
+     * @return array<string,mixed>
+     */
+    public static function timeline(iterable $events, float $from, float $until): array
     {
-        $interval = max(1.0, ($until - $from) / 20);
-        $buckets = [];
-        for ($i = 0; $i < 20; $i++) {
-            $buckets[] = ['ts' => $from + $i * $interval, 'hits' => 0, 'misses' => 0, 'sum' => 0.0, 'samples' => 0];
-        }
+        $timeline = new Timeline($from, $until);
         foreach ($events as $event) {
-            $ts = $event['ts'] ?? null;
-            if (!is_numeric($ts) || $ts < $from || $ts > $until) {
-                continue;
-            }
-            $index = min(19, (int) floor(($ts - $from) / $interval));
-            if (($event['type'] ?? '') === 'hit') { $buckets[$index]['hits']++; }
-            if (($event['type'] ?? '') === 'miss') { $buckets[$index]['misses']++; }
-            $duration = self::duration($event);
-            if ($duration !== null) {
-                $buckets[$index]['sum'] += $duration;
-                $buckets[$index]['samples']++;
-            }
+            $timeline->add($event);
         }
-        foreach ($buckets as &$bucket) {
-            $bucket['avg_ms'] = $bucket['samples'] > 0 ? round($bucket['sum'] / $bucket['samples'], 2) : null;
-            unset($bucket['sum']);
-        }
-        unset($bucket);
-        return ['from' => $from, 'until' => $until, 'interval_seconds' => $interval, 'buckets' => $buckets];
+
+        return $timeline->toArray();
+    }
+
+    /**
+     * A record's duration as cache-operation latency, or null when it has none
+     * or is not a cache operation (lifecycle, loader, and failover records).
+     *
+     * @param array<string,mixed> $event
+     */
+    public static function operationDuration(array $event): ?float
+    {
+        return self::duration($event);
     }
 
     // -----------------------------------------------------------------------

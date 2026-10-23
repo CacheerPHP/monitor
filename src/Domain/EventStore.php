@@ -30,32 +30,18 @@ final class EventStore
         // Unfiltered tails can use the fast path. With filters, apply the limit
         // after matching so busy namespaces cannot hide quieter ones.
         $hasFilters = $namespace !== null || $from !== null || $until !== null;
-        $lines = $limit > 0 && !$hasFilters ? $this->tailLines($limit) : $this->eachLine();
-
         $events = [];
-        foreach ($lines as $rawLine) {
-            $decoded = json_decode($rawLine, true);
-            if (!is_array($decoded)) {
-                continue;
-            }
-            if ($namespace !== null) {
-                if (!array_key_exists('namespace', $decoded['payload'] ?? [])) {
-                    continue;
-                }
-                $recordNamespace = $decoded['payload']['namespace'] ?? '';
-                $normalizedFilter = ($namespace === '(default)') ? '' : $namespace;
-                if ($recordNamespace !== $normalizedFilter) {
-                    continue;
+        if ($limit > 0 && !$hasFilters) {
+            foreach ($this->tailLines($limit) as $rawLine) {
+                $decoded = json_decode($rawLine, true);
+                if (is_array($decoded)) {
+                    $events[] = $decoded;
                 }
             }
-            $ts = isset($decoded['ts']) ? (float) $decoded['ts'] : null;
-            if ($from !== null && ($ts === null || $ts < $from)) {
-                continue;
+        } else {
+            foreach ($this->stream($namespace, $from, $until) as $event) {
+                $events[] = $event;
             }
-            if ($until !== null && ($ts === null || $ts > $until)) {
-                continue;
-            }
-            $events[] = $decoded;
         }
         if ($limit <= 0) {
             return $events;
@@ -69,6 +55,43 @@ final class EventStore
         usort($events, static fn (array $a, array $b): int => self::timestamp($a) <=> self::timestamp($b));
 
         return $hasFilters ? array_slice($events, -$limit) : $events;
+    }
+
+    /**
+     * Decoded events matching the namespace and time filters, in file order,
+     * one at a time — for consumers that aggregate as they read instead of
+     * holding the whole log in memory.
+     *
+     * @return \Generator<int,array<string,mixed>>
+     */
+    public function stream(?string $namespace = null, ?float $from = null, ?float $until = null): \Generator
+    {
+        if (!is_file($this->filePath)) {
+            return;
+        }
+        $normalizedFilter = $namespace === '(default)' ? '' : $namespace;
+        foreach ($this->eachLine() as $rawLine) {
+            $decoded = json_decode($rawLine, true);
+            if (!is_array($decoded)) {
+                continue;
+            }
+            if ($namespace !== null) {
+                if (!array_key_exists('namespace', $decoded['payload'] ?? [])) {
+                    continue;
+                }
+                if (($decoded['payload']['namespace'] ?? '') !== $normalizedFilter) {
+                    continue;
+                }
+            }
+            $ts = isset($decoded['ts']) ? (float) $decoded['ts'] : null;
+            if ($from !== null && ($ts === null || $ts < $from)) {
+                continue;
+            }
+            if ($until !== null && ($ts === null || $ts > $until)) {
+                continue;
+            }
+            yield $decoded;
+        }
     }
 
     /**
