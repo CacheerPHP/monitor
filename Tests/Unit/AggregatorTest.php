@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Cacheer\Monitor\Tests\Unit;
 
 use Cacheer\Monitor\Domain\Aggregator;
+use Cacheer\Monitor\Domain\KeyPattern;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class AggregatorTest extends TestCase
@@ -270,5 +272,82 @@ class AggregatorTest extends TestCase
         $this->assertSame([], $failover['windows']);
         $this->assertSame(0, $failover['window_count']);
         $this->assertSame(0, $failover['fallback_served']);
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function keyShapes(): array
+    {
+        return [
+            'numeric id'          => ['user:123', 'user:{id}'],
+            'scoped numeric id'   => ['shop/product:42', 'shop/product:{id}'],
+            'id inside a slug'    => ['product-42-reviews', 'product-{id}-reviews'],
+            'query parameter'     => ['page=2&sort=name', 'page={id}&sort=name'],
+            'uuid'                => ['order:550e8400-e29b-41d4-a716-446655440000', 'order:{uuid}'],
+            'ulid'                => ['session:01ARZ3NDEKTSV4RRFFQ69G5FAV', 'session:{ulid}'],
+            'date'                => ['report:2026-10-22', 'report:{date}'],
+            'timestamp'           => ['report:2026-10-22T10:30:00Z', 'report:{date}'],
+            'email'               => ['login:ada@example.com', 'login:{email}'],
+            'hash'                => ['avatar:9f86d081884c7d659a2feaa0c55ad015', 'avatar:{hash}'],
+            'number inside word'  => ['v2:config', 'v2:config'],
+            'short hex word'      => ['color:deadbeef', 'color:deadbeef'],
+            'constant'            => ['flag:ENABLED_FEATURE_FLAG_NUMBER1', 'flag:ENABLED_FEATURE_FLAG_NUMBER1'],
+        ];
+    }
+
+    #[DataProvider('keyShapes')]
+    public function test_keys_that_differ_only_by_an_identifier_share_a_pattern(string $key, string $pattern): void
+    {
+        $this->assertSame($pattern, KeyPattern::of($key));
+    }
+
+    public function test_patterns_group_keys_per_driver_and_namespace_and_rank_four_ways(): void
+    {
+        $events = [];
+        // user:{id} in the shop namespace: 30 lookups, 6 hits — a cache that is not paying off.
+        for ($i = 0; $i < 30; $i++) {
+            $events[] = ['ts' => (float) $i, 'type' => $i % 5 === 0 ? 'hit' : 'miss', 'payload' => ['key' => 'shop/user:' . $i, 'driver' => 'redis', 'namespace' => 'shop', 'duration_ms' => 1.0]];
+        }
+        // product:{id}: 40 lookups, all hits.
+        for ($i = 0; $i < 40; $i++) {
+            $events[] = ['ts' => 100.0 + $i, 'type' => 'hit', 'payload' => ['key' => 'shop/product:' . ($i % 4), 'driver' => 'redis', 'namespace' => 'shop', 'duration_ms' => 0.2]];
+        }
+        // Same shape on another driver stays a separate pattern; too few lookups to rank by hit rate.
+        $events[] = ['ts' => 200.0, 'type' => 'miss', 'payload' => ['key' => 'shop/user:1', 'driver' => 'file', 'namespace' => 'shop', 'duration_ms' => 9.0]];
+        $events[] = ['ts' => 201.0, 'type' => 'put', 'payload' => ['key' => 'shop/user:1', 'driver' => 'file', 'namespace' => 'shop']];
+
+        $patterns = Aggregator::summarize($events)['key_patterns'];
+
+        $this->assertSame(3, $patterns['count']);
+        $this->assertSame(Aggregator::PATTERN_MIN_LOOKUPS, $patterns['min_lookups']);
+
+        $byHitRate = $patterns['rankings']['hit_rate'];
+        $this->assertSame(['shop/user:{id}', 'shop/product:{id}'], array_column($byHitRate, 'pattern'), 'Lowest hit rate first, small samples left out.');
+        $this->assertSame('redis', $byHitRate[0]['driver']);
+        $this->assertSame(30, $byHitRate[0]['keys']);
+        $this->assertSame(30, $byHitRate[0]['lookups']);
+        $this->assertEqualsWithDelta(0.2, $byHitRate[0]['hit_rate'], 0.0001);
+        $this->assertSame(['shop/user:0', 'shop/user:1', 'shop/user:2'], $byHitRate[0]['examples']);
+        $this->assertSame(4, $byHitRate[1]['keys']);
+
+        $this->assertSame(['shop/user:{id}', 'shop/user:{id}'], array_column($patterns['rankings']['misses'], 'pattern'));
+        $this->assertSame(['redis', 'file'], array_column($patterns['rankings']['misses'], 'driver'));
+        $this->assertSame('shop/product:{id}', $patterns['rankings']['lookups'][0]['pattern']);
+        $this->assertSame('file', $patterns['rankings']['latency'][0]['driver']);
+        $this->assertSame(1, $patterns['rankings']['latency'][0]['writes']);
+    }
+
+    public function test_key_search_narrows_patterns_like_it_narrows_problem_keys(): void
+    {
+        $events = [
+            ['ts' => 1.0, 'type' => 'hit', 'payload' => ['key' => 'user:1', 'driver' => 'redis']],
+            ['ts' => 2.0, 'type' => 'hit', 'payload' => ['key' => 'order:1', 'driver' => 'redis']],
+        ];
+
+        $patterns = Aggregator::summarize($events, 'order')['key_patterns'];
+
+        $this->assertSame(['order:{id}'], array_column($patterns['rankings']['lookups'], 'pattern'));
+        $this->assertNull($patterns['rankings']['lookups'][0]['namespace'], 'An unreported namespace stays unreported.');
     }
 }

@@ -35,6 +35,7 @@ Caching makes apps fast — but _blind_ caching causes stale data, wasted memory
 - **Cache lifecycle** — stale responses, refreshes, promotions, and lock contention
 - **Failover** — operations served by the fallback, circuit changes, reconciliation, and outage windows (CacheerPHP 6.1+)
 - **Problem keys** — rank keys by misses, errors, hits, or p95 operation latency
+- **Key patterns** — group keys that differ only by an identifier (`user:123` → `user:{id}`) and find the pattern with the worst hit rate
 - **Health rules** — persistent dashboard settings, sample limits, sustained conditions, and snooze
 - **Key inspector** — drill into any key: history, stats, live value preview
 - **SSE streaming** — events push to the dashboard in real time
@@ -167,6 +168,7 @@ $cache = Cacheer::instrumented($store, $events);   // only this one reports
 | **TTL distribution**     | Expiry buckets when events report TTL; missing metadata is shown explicitly                        |
 | **Drivers doughnut**     | Event count breakdown by driver                                                                     |
 | **Problem keys**         | Top 10 matching keys per ranking, grouped by driver and namespace; hits, misses, errors, writes, and latency |
+| **Key patterns**         | Keys grouped by shape (`{id}`, `{uuid}`, `{ulid}`, `{date}`, `{email}`, `{hash}`) per driver and namespace; rank by lowest hit rate (patterns with 20+ lookups), misses, lookups, or p95 latency |
 | **Cache lifecycle**      | Stale served, refreshes, promotions, and lock contention; select a signal to filter events            |
 | **Failover**             | Served by fallback, circuit opened/closed, reconciled, and outage windows newest first (CacheerPHP 6.1+) |
 | **Namespaces grid**      | Counts for reported namespaces; unavailable metadata is explained                                  |
@@ -330,7 +332,8 @@ For `/api/snapshot`, `limit` applies only to the event feed. Its metrics and
 timeline cover all matching records in the current log. `key_filter` searches
 keys in the feed and rankings, and `type` filters the feed by event type. The
 response includes `coverage` (matching and shown counts), `timeline` (20 buckets),
-and metrics containing `lifecycle`, `problem_keys`, and metadata/sample counts.
+and metrics containing `lifecycle`, `problem_keys`, `key_patterns`, `failover`,
+`computed`, and metadata/sample counts.
 For `/api/metrics`, an explicit/default limit still bounds the records aggregated;
 use `limit=0` for all matching records.
 

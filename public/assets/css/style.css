@@ -1137,8 +1137,29 @@ h3 {
 .ttl-chart-wrap {
   height: 220px;
 }
-.namespaces-panel {
+.namespaces-panel,
+.patterns-panel {
   margin-top: 18px;
+}
+.patterns-panel .panel-heading {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.patterns-table {
+  min-width: 710px;
+}
+.pattern-name {
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.patterns-table td:first-child {
+  max-width: 320px;
+}
+.patterns-table th:not(:first-child),
+.patterns-table td:not(:first-child) {
+  text-align: right;
+  white-space: nowrap;
 }
 .namespaces-grid {
   display: grid;

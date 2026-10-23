@@ -589,6 +589,41 @@
               <p id="ttlEmpty" class="empty-inline">Expiry metadata is not available in the recorded events.</p>
             </article>
           </div>
+          <article class="panel patterns-panel">
+            <div class="panel-heading">
+              <div>
+                <h3>Key patterns</h3>
+                <p>
+                  Keys that differ only by an identifier, per driver and namespace. Find the cache that is not paying
+                  off.
+                </p>
+              </div>
+              <label class="ranking-control">
+                Rank by
+                <select id="patternRanking" class="control">
+                  <option value="hit_rate">Lowest hit rate</option>
+                  <option value="misses">Most misses</option>
+                  <option value="lookups">Most lookups</option>
+                  <option value="latency">Highest p95 latency</option>
+                </select>
+              </label>
+            </div>
+            <div class="table-wrap custom-scroll">
+              <table class="keys-table patterns-table">
+                <thead>
+                  <tr>
+                    <th scope="col">KEY PATTERN</th>
+                    <th scope="col">KEYS</th>
+                    <th scope="col">LOOKUPS</th>
+                    <th scope="col">HIT RATE</th>
+                    <th scope="col">MISSES</th>
+                    <th scope="col">AVG / P95</th>
+                  </tr>
+                </thead>
+                <tbody id="keyPatternsBody"></tbody>
+              </table>
+            </div>
+          </article>
           <article class="panel namespaces-panel">
             <div class="panel-heading">
               <div>

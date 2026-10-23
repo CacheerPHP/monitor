@@ -176,6 +176,29 @@ export function renderProblemKeysTable(tbodyElement, entries, onKeyClick, rankin
   }
 }
 
+/**
+ * Rows for the key patterns table. Patterns and example keys come from
+ * telemetry, so every value is escaped.
+ */
+export function keyPatternRowsHtml(entries, ranking = "hit_rate", minLookups = 20) {
+  if (!Array.isArray(entries) || !entries.length) {
+    const message =
+      ranking === "hit_rate"
+        ? `No key pattern has ${formatNumber(minLookups)} or more lookups yet.`
+        : `No recorded ${{ misses: "misses", lookups: "lookups", latency: "timed operations" }[ranking] || "activity"} for matching keys.`;
+    return `<tr><td colspan="6"><div class="empty-inline">${message}</div></td></tr>`;
+  }
+  return entries
+    .map((entry) => {
+      const namespace = entry.namespace === null ? "namespace unreported" : entry.namespace || "default";
+      const examples = (entry.examples || []).map((key) => escapeHtml(key)).join(", ");
+      const timing =
+        entry.latency_samples > 0 ? `${entry.latency.avg_ms.toFixed(1)} / ${entry.latency.p95_ms.toFixed(1)} ms` : "—";
+      return `<tr><td><span class="pattern-name">${escapeHtml(entry.pattern)}</span><small class="key-context">${escapeHtml(entry.driver)} · ${escapeHtml(namespace)}</small><small class="key-context">e.g. ${examples}</small></td><td>${formatNumber(entry.keys)}</td><td>${formatNumber(entry.lookups)}</td><td>${entry.hit_rate === null ? "—" : formatPercent(entry.hit_rate)}</td><td>${formatNumber(entry.misses)}</td><td>${timing}<small class="key-context">${formatNumber(entry.latency_samples)} timed samples</small></td></tr>`;
+    })
+    .join("");
+}
+
 export function renderNamespacesGrid(containerElement, namespaceMap, samples, total) {
   containerElement.replaceChildren();
   const input = document.getElementById("nsFilter");

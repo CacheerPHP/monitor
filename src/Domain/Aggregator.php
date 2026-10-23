@@ -26,6 +26,14 @@ final class Aggregator
     private const OUTAGE_WINDOWS = 10;
 
     /**
+     * Ranking patterns by hit rate needs enough lookups to mean something: one
+     * miss out of one lookup is not a 0% cache.
+     */
+    public const PATTERN_MIN_LOOKUPS = 20;
+
+    private const PATTERN_EXAMPLES = 3;
+
+    /**
      * Compute summary statistics (hits, misses, rates, latency, TTL distribution, etc.).
      *
      * @param array<int,array<string,mixed>> $events
@@ -62,6 +70,8 @@ final class Aggregator
         ];
         $latencySamples = [];
         $keys = [];
+        $patterns = [];
+        $patternOf = [];
         $failoverEvents = [];
 
         foreach ($events as $eventRecord) {
@@ -171,6 +181,22 @@ final class Aggregator
                 if ($durationMs !== null) {
                     $keys[$identity]['durations'][] = $durationMs;
                 }
+
+                // Keys repeat far more than they vary, so each key's pattern and
+                // pattern identity are worked out once per summary.
+                $patternIdentity = $patternOf[$identity] ??= json_encode([$driver, $payload['namespace'] ?? null, KeyPattern::of($key)]);
+                $pattern = $patterns[$patternIdentity]['pattern'] ?? KeyPattern::of($key);
+                $patterns[$patternIdentity] ??= [
+                    'pattern' => $pattern, 'driver' => $driver, 'namespace' => $payload['namespace'] ?? null,
+                    'keys' => [], 'hits' => 0, 'misses' => 0, 'errors' => 0, 'writes' => 0, 'durations' => [],
+                ];
+                $patterns[$patternIdentity]['keys'][$key] = true;
+                if ($counter !== null) {
+                    $patterns[$patternIdentity][$counter]++;
+                }
+                if ($durationMs !== null) {
+                    $patterns[$patternIdentity]['durations'][] = $durationMs;
+                }
             }
         }
 
@@ -187,6 +213,7 @@ final class Aggregator
         $stats['latency'] = self::latency($latencySamples);
         $stats['latency_samples'] = count($latencySamples);
         $stats['computed']['total_ms'] = round($stats['computed']['total_ms'], 3);
+        $stats['key_patterns'] = self::rankPatterns($patterns);
         $stats['failover'] = self::failover($failoverEvents);
         $rows = [];
         foreach ($keys as $keyStats) {
@@ -325,6 +352,68 @@ final class Aggregator
         }
         $duration = (float) $duration;
         return is_finite($duration) && $duration >= 0 ? $duration : null;
+    }
+
+    /**
+     * Rank key patterns four ways. Hit rate ranks lowest first and only among
+     * patterns with PATTERN_MIN_LOOKUPS lookups or more.
+     *
+     * @param array<string,array<string,mixed>> $patterns
+     * @return array<string,mixed>
+     */
+    private static function rankPatterns(array $patterns): array
+    {
+        $rows = [];
+        foreach ($patterns as $pattern) {
+            $lookups = $pattern['hits'] + $pattern['misses'];
+            $rows[] = [
+                'pattern'         => $pattern['pattern'],
+                'driver'          => $pattern['driver'],
+                'namespace'       => $pattern['namespace'],
+                'keys'            => count($pattern['keys']),
+                'examples'        => array_slice(array_keys($pattern['keys']), 0, self::PATTERN_EXAMPLES),
+                'hits'            => $pattern['hits'],
+                'misses'          => $pattern['misses'],
+                'lookups'         => $lookups,
+                'errors'          => $pattern['errors'],
+                'writes'          => $pattern['writes'],
+                'hit_rate'        => $lookups > 0 ? $pattern['hits'] / $lookups : null,
+                'latency'         => self::latency($pattern['durations']),
+                'latency_samples' => count($pattern['durations']),
+            ];
+        }
+
+        $rank = static function (callable $include, callable $compare) use ($rows): array {
+            $ranked = array_values(array_filter($rows, $include));
+            usort($ranked, static fn (array $a, array $b): int => $compare($a, $b)
+                ?: ($b['lookups'] <=> $a['lookups'])
+                ?: ([$a['pattern'], $a['driver'], $a['namespace']] <=> [$b['pattern'], $b['driver'], $b['namespace']]));
+
+            return array_slice($ranked, 0, 10);
+        };
+
+        return [
+            'count'       => count($rows),
+            'min_lookups' => self::PATTERN_MIN_LOOKUPS,
+            'rankings'    => [
+                'hit_rate' => $rank(
+                    static fn (array $row): bool => $row['lookups'] >= self::PATTERN_MIN_LOOKUPS,
+                    static fn (array $a, array $b): int => $a['hit_rate'] <=> $b['hit_rate'],
+                ),
+                'misses' => $rank(
+                    static fn (array $row): bool => $row['misses'] > 0,
+                    static fn (array $a, array $b): int => $b['misses'] <=> $a['misses'],
+                ),
+                'lookups' => $rank(
+                    static fn (array $row): bool => $row['lookups'] > 0,
+                    static fn (array $a, array $b): int => $b['lookups'] <=> $a['lookups'],
+                ),
+                'latency' => $rank(
+                    static fn (array $row): bool => $row['latency_samples'] > 0,
+                    static fn (array $a, array $b): int => $b['latency']['p95_ms'] <=> $a['latency']['p95_ms'],
+                ),
+            ],
+        ];
     }
 
     /**
