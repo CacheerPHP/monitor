@@ -24,7 +24,7 @@ export function updateConfigInfo(config) {
 
 export function updateMetricCards(metrics) {
   const latency = metrics?.latency || {};
-  for (const name of ["hits", "misses", "puts", "flushes", "renews", "clears", "errors"]) {
+  for (const name of ["hits", "misses", "puts", "flushes", "renews", "increments", "tag_flushes", "clears", "errors"]) {
     setTextById(name, formatNumber(metrics?.[name] ?? 0));
   }
   const lookups = Number(metrics?.hits ?? 0) + Number(metrics?.misses ?? 0);
@@ -55,7 +55,8 @@ export function updateMetricCards(metrics) {
   document.querySelector(".error-stat")?.classList.toggle("has-errors", Number(metrics?.errors ?? 0) > 0);
   setTextById(
     "efficiencyNote",
-    lookups ? "Lookups served directly from your cache." : "Waiting for your application's activity.",
+    timeSavedNote(metrics?.time_saved) ||
+      (lookups ? "Lookups served directly from your cache." : "Waiting for your application's activity."),
   );
 }
 
@@ -88,6 +89,48 @@ export function renderLifecycle(lifecycle) {
   for (const type of ["stale_served", "refresh", "promotion", "lock_contended"]) {
     setTextById(`lifecycle_${type}`, formatNumber(lifecycle[type] || 0));
   }
+}
+
+const FAILOVER_SIGNALS = ["fallback_served", "circuit_opened", "circuit_closed", "reconciled"];
+
+export function renderFailover(failover, listElement) {
+  for (const type of FAILOVER_SIGNALS) {
+    setTextById(`failover_${type}`, formatNumber(failover?.[type] || 0));
+  }
+  const windowCount = Number(failover?.window_count || 0);
+  setTextById(
+    "failoverSummary",
+    windowCount
+      ? `${formatNumber(windowCount)} outage window${windowCount === 1 ? "" : "s"} in the current log`
+      : "No fallback activity in the current log",
+  );
+  if (listElement) {
+    listElement.innerHTML = failoverWindowsHtml(failover);
+  }
+}
+
+/**
+ * Outage windows, newest first. Rendered from telemetry, so every value is escaped.
+ */
+export function failoverWindowsHtml(failover) {
+  const windows = Array.isArray(failover?.windows) ? failover.windows : [];
+  if (!windows.length) {
+    return `<li class="failover-empty">No outage recorded. Failover reporting needs CacheerPHP 6.1 or later and a resilient cache.</li>`;
+  }
+  return windows
+    .map((window) => {
+      const served = Number(window.fallback_served || 0);
+      const processes = Number(window.processes || 0);
+      const details = [
+        formatDuration(window.duration_seconds),
+        `${formatNumber(served)} served by fallback`,
+        `${formatNumber(processes)} process${processes === 1 ? "" : "es"}`,
+      ].join(" · ");
+      const recovery = window.recovered ? "Recovery recorded" : "No recovery recorded yet";
+      const error = window.error ? `<span class="failover-error">${escapeHtml(window.error)}</span>` : "";
+      return `<li class="failover-window${window.recovered ? " recovered" : ""}"><div><strong>${escapeHtml(formatTimestamp(window.start))}</strong><span>${escapeHtml(details)}</span>${error}</div><span class="event-badge ${window.recovered ? "circuit_closed" : "circuit_opened"}">${recovery}</span></li>`;
+    })
+    .join("");
 }
 
 export function updateCoverage(coverage) {
@@ -132,6 +175,100 @@ export function renderProblemKeysTable(tbodyElement, entries, onKeyClick, rankin
       .addEventListener("click", () => onKeyClick?.(key, namespace === "" ? "(default)" : namespace, driver));
     tbodyElement.appendChild(row);
   }
+}
+
+export function renderWastedWork(metrics, listElement) {
+  const wasted = metrics?.wasted_writes || {};
+  const stampedes = metrics?.stampedes || {};
+  setTextById("wasted_writes", formatNumber(wasted.wasted || 0));
+  setTextById(
+    "wasted_writes_detail",
+    wasted.evaluated
+      ? `Of ${formatNumber(wasted.evaluated)} writes with a known outcome`
+      : "No write has a known outcome yet",
+  );
+  setTextById("wasted_expired", formatNumber(wasted.expired || 0));
+  setTextById("stampede_count", formatNumber(stampedes.count || 0));
+  setTextById("stampede_loader_runs", formatNumber(stampedes.loader_runs || 0));
+  if (stampedes.min_misses) {
+    setTextById(
+      "stampede_rule",
+      `${stampedes.min_misses}+ misses on one key within ${stampedes.window_seconds} s, from 2+ processes`,
+    );
+  }
+  if (listElement) {
+    listElement.innerHTML = stampedeListHtml(stampedes);
+  }
+}
+
+/**
+ * Recent stampedes, newest first. Keys come from telemetry, so every value is escaped.
+ */
+export function stampedeListHtml(stampedes) {
+  const recent = Array.isArray(stampedes?.recent) ? stampedes.recent : [];
+  if (!recent.length) {
+    return `<li class="failover-empty">No stampede recorded.</li>`;
+  }
+  return recent
+    .map((stampede) => {
+      const namespace = stampede.namespace === null ? "namespace unreported" : stampede.namespace || "default";
+      const runs = Number(stampede.loader_runs || 0);
+      const details = [
+        `${formatNumber(stampede.misses)} misses in ${formatDuration(stampede.duration_seconds)}`,
+        `${formatNumber(stampede.processes)} processes`,
+        runs ? `${formatNumber(runs)} loader run${runs === 1 ? "" : "s"}` : "loader runs not reported",
+      ].join(" · ");
+      return `<li class="failover-window"><div><strong>${escapeHtml(stampede.key)}</strong><span>${escapeHtml(formatTimestamp(stampede.start))} · ${escapeHtml(stampede.driver)} · ${escapeHtml(namespace)}</span><span>${escapeHtml(details)}</span></div><span class="event-badge ${runs > 1 ? "circuit_opened" : "miss"}">${runs > 1 ? "Work repeated" : "Burst of misses"}</span></li>`;
+    })
+    .join("");
+}
+
+/**
+ * The efficiency card's headline, or null when no loader timings were recorded
+ * (CacheerPHP 6.0, or caches filled with set() rather than remember()).
+ */
+export function timeSavedNote(timeSaved) {
+  const estimated = timeSaved?.estimated_ms;
+  if (!isFiniteNumber(estimated)) {
+    return null;
+  }
+  const runs = Number(timeSaved.loader_runs || 0);
+  return `≈ ${formatMilliseconds(estimated)} of loader time saved (estimate from ${formatNumber(runs)} loader run${runs === 1 ? "" : "s"}).`;
+}
+
+/**
+ * Rows for the key patterns table. Patterns and example keys come from
+ * telemetry, so every value is escaped.
+ */
+export function keyPatternRowsHtml(entries, ranking = "hit_rate", minLookups = 20) {
+  if (!Array.isArray(entries) || !entries.length) {
+    const message =
+      ranking === "hit_rate"
+        ? `No key pattern has ${formatNumber(minLookups)} or more lookups yet.`
+        : ranking === "time_saved"
+          ? "No loader timings yet. Time saved needs CacheerPHP 6.1 or later and values cached with remember() or flexible()."
+          : ranking === "wasted_writes"
+            ? "No wasted writes: every write with a known outcome was read."
+            : `No recorded ${{ misses: "misses", lookups: "lookups", latency: "timed operations" }[ranking] || "activity"} for matching keys.`;
+    return `<tr><td colspan="8"><div class="empty-inline">${message}</div></td></tr>`;
+  }
+  return entries
+    .map((entry) => {
+      const namespace = entry.namespace === null ? "namespace unreported" : entry.namespace || "default";
+      const examples = (entry.examples || []).map((key) => escapeHtml(key)).join(", ");
+      const timing =
+        entry.latency_samples > 0 ? `${entry.latency.avg_ms.toFixed(1)} / ${entry.latency.p95_ms.toFixed(1)} ms` : "—";
+      const runs = Number(entry.loader_runs || 0);
+      const saved = isFiniteNumber(entry.time_saved_ms)
+        ? `${formatMilliseconds(entry.time_saved_ms)}<small class="key-context">${formatNumber(runs)} loader run${runs === 1 ? "" : "s"} · avg ${formatMilliseconds(entry.loader_avg_ms)}</small>`
+        : `—<small class="key-context">no loader timings</small>`;
+      const evaluated = Number(entry.evaluated_writes || 0);
+      const wastedWrites = evaluated
+        ? `${formatNumber(entry.wasted_writes)} of ${formatNumber(evaluated)}<small class="key-context">ended before any read</small>`
+        : `—<small class="key-context">no known outcome</small>`;
+      return `<tr><td><span class="pattern-name">${escapeHtml(entry.pattern)}</span><small class="key-context">${escapeHtml(entry.driver)} · ${escapeHtml(namespace)}</small><small class="key-context">e.g. ${examples}</small></td><td>${formatNumber(entry.keys)}</td><td>${formatNumber(entry.lookups)}</td><td>${entry.hit_rate === null ? "—" : formatPercent(entry.hit_rate)}</td><td>${formatNumber(entry.misses)}</td><td>${timing}<small class="key-context">${formatNumber(entry.latency_samples)} timed samples</small></td><td>${saved}</td><td>${wastedWrites}</td></tr>`;
+    })
+    .join("");
 }
 
 export function renderNamespacesGrid(containerElement, namespaceMap, samples, total) {
@@ -316,6 +453,28 @@ function formatJsonPreview(raw) {
     return raw;
   }
 }
+function formatMilliseconds(value) {
+  const ms = Math.max(0, Number(value) || 0);
+  if (ms < 1000) {
+    return `${ms < 10 ? ms.toFixed(1) : Math.round(ms)} ms`;
+  }
+  if (ms < 60_000) {
+    return `${(ms / 1000).toFixed(1)} s`;
+  }
+  if (ms < 3_600_000) {
+    return `${(ms / 60_000).toFixed(1)} min`;
+  }
+  return `${(ms / 3_600_000).toFixed(1)} h`;
+}
+function formatDuration(value) {
+  const seconds = Math.max(0, Number(value) || 0);
+  if (seconds < 1) {
+    return "under a second";
+  }
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds % 60);
+  return minutes ? `${minutes}m ${rest}s` : `${rest}s`;
+}
 function formatTimestamp(value) {
   return value ? new Date(value * 1000).toLocaleString() : "—";
 }
@@ -344,6 +503,12 @@ function badgeClass(type) {
     "promotion",
     "lock_contended",
     "prune",
+    "increment",
+    "computed",
+    "fallback_served",
+    "circuit_opened",
+    "circuit_closed",
+    "reconciled",
   ];
   return "event-badge" + (known.includes(type) ? " " + type : "");
 }

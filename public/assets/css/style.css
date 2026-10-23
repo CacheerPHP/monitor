@@ -1137,8 +1137,29 @@ h3 {
 .ttl-chart-wrap {
   height: 220px;
 }
-.namespaces-panel {
+.namespaces-panel,
+.patterns-panel {
   margin-top: 18px;
+}
+.patterns-panel .panel-heading {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.patterns-table {
+  min-width: 710px;
+}
+.pattern-name {
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.patterns-table td:first-child {
+  max-width: 320px;
+}
+.patterns-table th:not(:first-child),
+.patterns-table td:not(:first-child) {
+  text-align: right;
+  white-space: nowrap;
 }
 .namespaces-grid {
   display: grid;
@@ -1962,8 +1983,49 @@ kbd {
   font-size: 11px;
   line-height: 1.7;
 }
-.lifecycle-panel {
+.lifecycle-panel,
+.failover-panel {
   margin-top: 18px;
+}
+.failover-windows {
+  list-style: none;
+  margin: 0;
+  padding: 0 20px 20px;
+  display: grid;
+  gap: 8px;
+}
+.failover-window {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+.failover-window > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.failover-window strong {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.failover-window span,
+.failover-empty {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.failover-window .failover-error {
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+.failover-window .event-badge {
+  flex-shrink: 0;
 }
 .lifecycle-grid {
   display: grid;
@@ -1987,6 +2049,13 @@ kbd {
 .lifecycle-signal:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+.lifecycle-signal.static {
+  cursor: default;
+}
+.lifecycle-signal.static:hover {
+  border-color: var(--border);
+  background: var(--surface-subtle);
 }
 .lifecycle-signal span {
   color: var(--muted);
@@ -2129,9 +2198,23 @@ kbd {
   border-color: transparent;
 }
 .event-badge.promotion,
-.event-badge.prune {
+.event-badge.prune,
+.event-badge.increment,
+.event-badge.computed {
   color: var(--accent);
   background: var(--accent-soft);
+  border-color: transparent;
+}
+.event-badge.fallback_served,
+.event-badge.circuit_opened {
+  color: var(--warning);
+  background: var(--warning-soft);
+  border-color: transparent;
+}
+.event-badge.circuit_closed,
+.event-badge.reconciled {
+  color: var(--teal);
+  background: var(--teal-soft);
   border-color: transparent;
 }
 .event-error {
@@ -2157,6 +2240,12 @@ kbd {
   .lifecycle-grid {
     padding: 0 16px 16px;
     gap: 8px;
+  }
+  .failover-windows {
+    padding: 0 16px 16px;
+  }
+  .failover-window {
+    flex-direction: column;
   }
   .lifecycle-signal {
     padding: 12px;

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cacheer\Monitor\Application;
 
 use Cacheer\Monitor\Domain\Aggregator;
+use Cacheer\Monitor\Domain\Timeline;
 
 /**
  * Read-only use cases for monitor health, config, metrics, and event feeds.
@@ -65,25 +66,34 @@ final class MonitorReadService
         string $keyFilter = '',
         string $eventType = '',
     ): array {
-        $events = $this->context->store()->readAll(0, $namespace, $from, $until);
-        $metrics = Aggregator::summarize($events, $keyFilter);
-        $feedEvents = array_values(array_filter($events, static function ($event) use ($keyFilter, $eventType): bool {
-            return ($eventType === '' || ($event['type'] ?? '') === $eventType)
-                && ($keyFilter === '' || stripos((string) ($event['payload']['key'] ?? ''), $keyFilter) !== false);
-        }));
-        $visibleEvents = $limit > 0 ? array_slice($feedEvents, -$limit) : $feedEvents;
+        // One pass over the log: metrics, timeline, and feed are all built as the
+        // events stream past, so the decoded log never has to fit in memory.
         $end = $until ?? microtime(true);
+        $timeline = new Timeline($from ?? $end - 600, $end);
+        $feed = new FeedWindow($limit, $keyFilter, $eventType);
+        $matching = 0;
+        $tap = (static function (iterable $events) use ($timeline, $feed, &$matching): \Generator {
+            foreach ($events as $event) {
+                $matching++;
+                $timeline->add($event);
+                $feed->offer($event);
+                yield $event;
+            }
+        })($this->context->store()->stream($namespace, $from, $until));
+
+        $metrics = Aggregator::summarize($tap, $keyFilter);
+        $visibleEvents = $feed->events();
 
         return [
             'metrics' => $metrics,
             'events'  => $visibleEvents,
             'coverage' => [
                 'source' => 'current_log',
-                'matching_events' => count($events),
-                'matching_feed_events' => count($feedEvents),
+                'matching_events' => $matching,
+                'matching_feed_events' => $feed->matching(),
                 'shown_events' => count($visibleEvents),
             ],
-            'timeline' => Aggregator::timeline($events, $from ?? $end - 600, $end),
+            'timeline' => $timeline->toArray(),
         ];
     }
 }

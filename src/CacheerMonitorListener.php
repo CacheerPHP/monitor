@@ -7,6 +7,7 @@ namespace Cacheer\Monitor;
 use Cacheer\Monitor\Reporter\MetricsReporterInterface;
 use Cacheer\Monitor\Support\ValueTelemetry;
 use Silviooosilva\CacheerPhp\Contracts\EventDispatcher;
+use Silviooosilva\CacheerPhp\Kernel\Ttl;
 use Silviooosilva\CacheerPhp\Observability\CacheEvent;
 use Silviooosilva\CacheerPhp\Observability\CacheEventType;
 
@@ -51,10 +52,28 @@ final class CacheerMonitorListener implements EventDispatcher
             $payload = array_merge($payload, $this->valueTelemetry->describe($event->value));
         }
 
-        $this->reporter->event(
-            $this->typeName($event->type),
-            array_filter($payload, static fn ($value) => $value !== null),
-        );
+        // CacheerPHP 6.1 reports an event's scope, TTL, and operation; 6.0 does
+        // not have these properties, and `??` reads them without a warning.
+        // Unreported context is left out, never guessed.
+        $scope = $event->scope ?? null;
+        $ttl = $event->ttl ?? null;
+        $operation = $event->operation ?? null;
+
+        $payload = array_filter($payload, static fn ($value) => $value !== null);
+
+        if (is_string($scope)) {
+            $payload['namespace'] = $scope;
+        }
+
+        if ($ttl instanceof Ttl) {
+            $payload['ttl'] = $ttl->inSeconds(); // null records a forever write
+        }
+
+        if (is_string($operation)) {
+            $payload['operation'] = $operation;
+        }
+
+        $this->reporter->event($this->typeName($event->type, $operation), $payload);
     }
 
     /**
@@ -74,20 +93,30 @@ final class CacheerMonitorListener implements EventDispatcher
         return (string) preg_replace('/\b(password|passwd|pwd|pass|secret|token|auth)\s*[=:]\s*("[^"]*"|\'[^\']*\'|[^\s;,&)\]]+)/i', '$1=***', $message);
     }
 
-    private function typeName(CacheEventType $type): string
+    private function typeName(CacheEventType $type, ?string $operation): string
     {
-        return match ($type) {
-            CacheEventType::Hit           => 'hit',
-            CacheEventType::Miss          => 'miss',
-            CacheEventType::Write         => 'put',
-            CacheEventType::Delete        => 'clear',
-            CacheEventType::Clear         => 'flush',
-            CacheEventType::Prune         => 'prune',
-            CacheEventType::Failure       => 'error',
-            CacheEventType::Promotion     => 'promotion',
-            CacheEventType::StaleServed   => 'stale_served',
-            CacheEventType::Refresh       => 'refresh',
-            CacheEventType::LockContended => 'lock_contended',
+        // Values, not enum cases: cases added after CacheerPHP 6.0 must not be
+        // referenced when an older version is installed.
+        return match ($type->value) {
+            'cache.hit'            => 'hit',
+            'cache.miss'           => 'miss',
+            'cache.write'          => match ($operation) {
+                'touch'     => 'renew',
+                'tag'       => 'tag',
+                'increment' => 'increment',
+                default     => 'put',
+            },
+            'cache.delete'         => 'clear',
+            'cache.clear'          => 'flush',
+            'cache.prune'          => $operation === 'clearTag' ? 'flush_tag' : 'prune',
+            'cache.failure'        => 'error',
+            'cache.promotion'      => 'promotion',
+            'cache.stale_served'   => 'stale_served',
+            'cache.refresh'        => 'refresh',
+            'cache.lock_contended' => 'lock_contended',
+            // computed, circuit_opened, circuit_closed, fallback_served,
+            // reconciled, and any type a later CacheerPHP adds.
+            default                => str_starts_with($type->value, 'cache.') ? substr($type->value, 6) : $type->value,
         };
     }
 }

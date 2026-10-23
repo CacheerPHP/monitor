@@ -169,6 +169,49 @@ class ApiControllerTest extends TestCase
         $this->assertSame($decoded['metrics']['total_events'], count($decoded['events']));
     }
 
+    public function test_snapshot_feed_holds_the_newest_matching_events_by_timestamp(): void
+    {
+        // Two processes' batches landed out of time order; 30 events in all.
+        $lines = '';
+        foreach ([[20, 30, 'p2'], [0, 20, 'p1']] as [$first, $last, $instance]) {
+            for ($i = $first; $i < $last; $i++) {
+                $lines .= json_encode([
+                    'ts' => 1000.0 + $i,
+                    'type' => $i % 3 === 0 ? 'miss' : 'hit',
+                    'instance' => $instance,
+                    'payload' => ['key' => 'user:' . $i, 'driver' => 'FileStore', 'duration_ms' => 1.0],
+                ]) . PHP_EOL;
+            }
+        }
+        file_put_contents($this->eventsFile, $lines);
+
+        $snapshot = $this->snapshotWith(['limit' => '5', 'type' => 'miss']);
+
+        // The misses are 0, 3, ..., 27; the newest five, oldest first.
+        $this->assertSame(
+            ['user:15', 'user:18', 'user:21', 'user:24', 'user:27'],
+            array_map(static fn (array $event): string => $event['payload']['key'], $snapshot['events']),
+        );
+        $this->assertSame(['source' => 'current_log', 'matching_events' => 30, 'matching_feed_events' => 10, 'shown_events' => 5], $snapshot['coverage']);
+        $this->assertSame(30, $snapshot['metrics']['total_events'], 'Metrics cover every matching record, not just the feed.');
+        $this->assertSame(10, $snapshot['metrics']['misses']);
+    }
+
+    public function test_snapshot_feed_without_a_limit_returns_every_match_in_time_order(): void
+    {
+        file_put_contents($this->eventsFile, implode(PHP_EOL, array_map('json_encode', [
+            ['ts' => 30.0, 'type' => 'hit', 'payload' => ['key' => 'late', 'driver' => 'FileStore']],
+            ['ts' => 10.0, 'type' => 'hit', 'payload' => ['key' => 'early', 'driver' => 'FileStore']],
+            ['ts' => 20.0, 'type' => 'miss', 'payload' => ['key' => 'middle', 'driver' => 'FileStore']],
+        ])) . PHP_EOL);
+
+        $snapshot = $this->snapshotWith(['limit' => '0', 'from' => '0', 'until' => '100']);
+
+        $this->assertSame(['early', 'middle', 'late'], array_map(static fn (array $event): string => $event['payload']['key'], $snapshot['events']));
+        $this->assertSame(2, array_sum(array_column($snapshot['timeline']['buckets'], 'hits')), 'The timeline is built in the same pass.');
+        $this->assertSame(1, $snapshot['timeline']['buckets'][4]['misses'], 'ts 20 lands in the fifth 5-second bucket.');
+    }
+
     public function test_key_inspector_can_force_live_refresh_over_existing_event_preview(): void
     {
         Cacheer::file($this->cacheDir)->set('preview-key-live', ['name' => 'Fresh Value']);
@@ -307,6 +350,17 @@ class ApiControllerTest extends TestCase
         $this->assertFalse($summary['capture_values_enabled']);
         $this->assertNull($summary['last_value_preview']);
         $this->assertArrayNotHasKey('live_lookup_reason', $summary);
+    }
+
+    /**
+     * @param array<string,string> $query
+     * @return array<string,mixed>
+     */
+    private function snapshotWith(array $query): array
+    {
+        $response = ApiController::fromConfig()->snapshot(new Request('GET', '/api/snapshot', $query));
+
+        return json_decode($response->body, true);
     }
 
     private function recordKey(string $key, array $metadata = []): void

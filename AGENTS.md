@@ -82,7 +82,13 @@ tag availability rather than copying an old pre-release instruction.
 - Preserve the event mapping: `Hit` → `hit`, `Miss` → `miss`, `Write` → `put`,
   `Delete` → `clear`, `Clear` → `flush`, `Prune` → `prune`, `Failure` → `error`;
   lifecycle types are `promotion`, `stale_served`, `refresh`, `lock_contended`.
-  Deleting one key and clearing a store are different operations.
+  Deleting one key and clearing a store are different operations. When
+  CacheerPHP 6.1+ reports the operation, a `Write` from `touch` → `renew`, from
+  `tag` → `tag`, from `increment` → `increment`, and a `Prune` from `clearTag`
+  → `flush_tag`; without an operation the base mapping applies. Newer types map
+  to their value without the `cache.` prefix: `computed`, `fallback_served`,
+  `circuit_opened`, `circuit_closed`, `reconciled`. Match type values, not enum
+  cases, so the listener keeps working with CacheerPHP 6.0.
 - Cacheer events use microseconds; records use `duration_ms`. Preserve conversion
   and units through aggregation, charts, inspector, and export.
 - Resolve paths from the consuming project root, not the installed package
@@ -94,7 +100,10 @@ tag availability rather than copying an old pre-release instruction.
 ## Metrics and data semantics
 
 - Metrics describe recorded cache activity, not application request latency,
-  loader execution time, database query time, or a benchmark.
+  database query time, or a benchmark. Loader time (`computed`, CacheerPHP 6.1+)
+  is reported only as its own measure and as the time-saved estimate: label that
+  estimate as one, show its loader-run count, and leave it unknown (never zero)
+  for patterns with no recorded loader runs.
 - Snapshot metrics and timelines cover all matching records in the current
   log. The feed limit only limits displayed events; apply feed filters before
   the limit. Preserve `/api/metrics`' separately documented limit behavior.
@@ -106,10 +115,18 @@ tag availability rather than copying an old pre-release instruction.
 - Hit rate is hits / (hits + misses). Unknown or absent samples are unavailable,
   not zero latency, perfect hit rate, or healthy status.
 - Include sample counts for latency summaries. Exclude untimed lifecycle
-  markers from operation latency and do not overstate a p95 from a few samples.
-- Current v6 typed events do not include namespace or TTL fields. Keep unknown
-  metadata unknown; never infer root scope or forever from absence. An explicitly
-  recorded `ttl: null` means forever. Older/custom records may provide these fields.
+  markers, loader runs (`computed`), and failover reports from operation latency,
+  and do not overstate a p95 from a few samples.
+- CacheerPHP 6.1+ events report namespace (scope), TTL, and operation; 6.0 events
+  do not. Keep unknown metadata unknown; never infer root scope or forever from
+  absence. An explicitly recorded `ttl: null` means forever.
+- Failover state lives in each PHP process, and short-lived requests rarely open
+  a circuit. Derive outage windows from fallback activity, and never present a
+  window as ongoing only because no recovery was recorded.
+- A wasted write needs a known outcome: overwritten, deleted, or expired with a
+  reported TTL, before any read. Never count a write that may still be live or
+  whose TTL is unknown. Judge process-local drivers (`ArrayStore`) per process,
+  for wasted writes and stampedes alike.
 - Group problem keys and inspector history by reported driver, namespace
   identity/missing metadata, and key. A display name alone is not globally unique.
 - Handle malformed/partial JSONL records and a missing or rotated file without

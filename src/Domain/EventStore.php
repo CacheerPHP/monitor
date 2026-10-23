@@ -30,10 +30,47 @@ final class EventStore
         // Unfiltered tails can use the fast path. With filters, apply the limit
         // after matching so busy namespaces cannot hide quieter ones.
         $hasFilters = $namespace !== null || $from !== null || $until !== null;
-        $lines = $limit > 0 && !$hasFilters ? $this->tailLines($limit) : $this->eachLine();
-
         $events = [];
-        foreach ($lines as $rawLine) {
+        if ($limit > 0 && !$hasFilters) {
+            foreach ($this->tailLines($limit) as $rawLine) {
+                $decoded = json_decode($rawLine, true);
+                if (is_array($decoded)) {
+                    $events[] = $decoded;
+                }
+            }
+        } else {
+            foreach ($this->stream($namespace, $from, $until) as $event) {
+                $events[] = $event;
+            }
+        }
+        if ($limit <= 0) {
+            return $events;
+        }
+
+        // Reporters write in batches, so processes interleave in the file by batch
+        // rather than by time. Order by timestamp (stable for ties) before taking
+        // the newest matches. The unfiltered fast path only reads the file's last
+        // $limit lines, so near its edge it can miss an event that arrived in a
+        // later batch with an earlier timestamp (at most one flush interval old).
+        usort($events, static fn (array $a, array $b): int => self::timestamp($a) <=> self::timestamp($b));
+
+        return $hasFilters ? array_slice($events, -$limit) : $events;
+    }
+
+    /**
+     * Decoded events matching the namespace and time filters, in file order,
+     * one at a time — for consumers that aggregate as they read instead of
+     * holding the whole log in memory.
+     *
+     * @return \Generator<int,array<string,mixed>>
+     */
+    public function stream(?string $namespace = null, ?float $from = null, ?float $until = null): \Generator
+    {
+        if (!is_file($this->filePath)) {
+            return;
+        }
+        $normalizedFilter = $namespace === '(default)' ? '' : $namespace;
+        foreach ($this->eachLine() as $rawLine) {
             $decoded = json_decode($rawLine, true);
             if (!is_array($decoded)) {
                 continue;
@@ -42,9 +79,7 @@ final class EventStore
                 if (!array_key_exists('namespace', $decoded['payload'] ?? [])) {
                     continue;
                 }
-                $recordNamespace = $decoded['payload']['namespace'] ?? '';
-                $normalizedFilter = ($namespace === '(default)') ? '' : $namespace;
-                if ($recordNamespace !== $normalizedFilter) {
+                if (($decoded['payload']['namespace'] ?? '') !== $normalizedFilter) {
                     continue;
                 }
             }
@@ -55,9 +90,8 @@ final class EventStore
             if ($until !== null && ($ts === null || $ts > $until)) {
                 continue;
             }
-            $events[] = $decoded;
+            yield $decoded;
         }
-        return $hasFilters && $limit > 0 ? array_slice($events, -$limit) : $events;
     }
 
     /**
@@ -100,12 +134,21 @@ final class EventStore
             }
             $matches[] = $decoded;
         }
-        // Newest first
+        // Newest first, by timestamp: file position is only ordered within a process.
         $matches = array_reverse($matches);
+        usort($matches, static fn (array $a, array $b): int => self::timestamp($b) <=> self::timestamp($a));
         if ($limit > 0 && count($matches) > $limit) {
             $matches = array_slice($matches, 0, $limit);
         }
         return $matches;
+    }
+
+    /**
+     * @param array<string,mixed> $event
+     */
+    private static function timestamp(array $event): float
+    {
+        return isset($event['ts']) && is_numeric($event['ts']) ? (float) $event['ts'] : 0.0;
     }
 
     /**

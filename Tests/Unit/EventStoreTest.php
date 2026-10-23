@@ -117,6 +117,39 @@ class EventStoreTest extends TestCase
         $this->assertEquals(3, $result[3]['ts']);
     }
 
+    public function test_a_bounded_feed_is_ordered_by_timestamp_not_file_position(): void
+    {
+        // Two processes flushed their batches in the opposite order of their events.
+        $events = [
+            ['ts' => 3.0, 'type' => 'hit', 'payload' => ['key' => 'b1']],
+            ['ts' => 4.0, 'type' => 'hit', 'payload' => ['key' => 'b2']],
+            ['ts' => 1.0, 'type' => 'hit', 'payload' => ['key' => 'a1']],
+            ['ts' => 2.0, 'type' => 'hit', 'payload' => ['key' => 'a2', 'namespace' => '']],
+        ];
+        file_put_contents($this->tempFile, implode("\n", array_map('json_encode', $events)) . "\n");
+        $store = new EventStore($this->tempFile);
+
+        $keys = static fn (array $result): array => array_map(static fn (array $event): string => $event['payload']['key'], $result);
+
+        $this->assertSame(['a1', 'a2', 'b1', 'b2'], $keys($store->readAll(4)));
+        $this->assertSame(['a2', 'b1', 'b2'], $keys($store->readAll(3, null, 0.5, 9.0)), 'The newest matches, not the last lines.');
+        $this->assertSame(['b1', 'b2', 'a1', 'a2'], $keys($store->readAll()), 'Unbounded reads keep file order for aggregation.');
+    }
+
+    public function test_key_history_is_newest_first_by_timestamp(): void
+    {
+        $events = [
+            ['ts' => 5.0, 'type' => 'hit', 'payload' => ['key' => 'k', 'n' => 'late-batch']],
+            ['ts' => 2.0, 'type' => 'put', 'payload' => ['key' => 'k', 'n' => 'early']],
+            ['ts' => 3.0, 'type' => 'hit', 'payload' => ['key' => 'k', 'n' => 'middle']],
+        ];
+        file_put_contents($this->tempFile, implode("\n", array_map('json_encode', $events)) . "\n");
+
+        $history = (new EventStore($this->tempFile))->readByKey('k');
+
+        $this->assertSame(['late-batch', 'middle', 'early'], array_map(static fn (array $event): string => $event['payload']['n'], $history));
+    }
+
     public function test_read_all_filters_by_namespace(): void
     {
         $events = [

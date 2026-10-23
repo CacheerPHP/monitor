@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Cacheer\Monitor\Tests\Unit;
 
 use Cacheer\Monitor\Domain\Aggregator;
+use Cacheer\Monitor\Domain\KeyPattern;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class AggregatorTest extends TestCase
@@ -165,5 +167,333 @@ class AggregatorTest extends TestCase
         $this->assertSame('null', $summary['last_value_preview']);
         $this->assertNull($summary['last_value_type']);
         $this->assertSame(0, $summary['last_size_bytes']);
+    }
+
+    public function test_increments_and_tag_flushes_are_counted_apart_from_writes(): void
+    {
+        $events = [
+            ['ts' => 1.0, 'type' => 'increment', 'payload' => ['key' => 'views', 'driver' => 'redis', 'operation' => 'increment']],
+            ['ts' => 2.0, 'type' => 'increment', 'payload' => ['key' => 'views', 'driver' => 'redis', 'operation' => 'increment']],
+            ['ts' => 3.0, 'type' => 'flush_tag', 'payload' => ['driver' => 'redis', 'operation' => 'clearTag']],
+            ['ts' => 4.0, 'type' => 'tag', 'payload' => ['key' => 'views', 'driver' => 'redis', 'operation' => 'tag']],
+        ];
+
+        $stats = Aggregator::summarize($events);
+
+        $this->assertSame(2, $stats['increments']);
+        $this->assertSame(1, $stats['tag_flushes']);
+        $this->assertSame(1, $stats['tags']);
+        $this->assertSame(0, $stats['puts']);
+        $this->assertSame([], $stats['problem_keys']['hits'], 'Increments are not hits.');
+    }
+
+    public function test_loader_runs_are_summed_and_kept_out_of_cache_latency(): void
+    {
+        $events = [
+            ['ts' => 1.0, 'type' => 'miss', 'payload' => ['key' => 'report', 'driver' => 'redis', 'duration_ms' => 0.5]],
+            ['ts' => 1.1, 'type' => 'computed', 'payload' => ['key' => 'report', 'driver' => 'redis', 'duration_ms' => 840.0]],
+            ['ts' => 1.2, 'type' => 'put', 'payload' => ['key' => 'report', 'driver' => 'redis', 'duration_ms' => 0.7]],
+            ['ts' => 2.0, 'type' => 'fallback_served', 'payload' => ['driver' => 'ResilientStore', 'duration_ms' => 0.0]],
+            ['ts' => 3.0, 'type' => 'reconciled', 'payload' => ['driver' => 'ResilientStore', 'duration_ms' => 25.0, 'count' => 1]],
+        ];
+
+        $stats = Aggregator::summarize($events);
+
+        $this->assertSame(['count' => 1, 'total_ms' => 840.0], $stats['computed']);
+        $this->assertSame(2, $stats['latency_samples'], 'Only the miss and the write are cache operations.');
+        $this->assertEqualsWithDelta(0.6, $stats['latency']['avg_ms'], 0.001);
+
+        $timeline = Aggregator::timeline($events, 0.0, 20.0);
+        $this->assertSame(2, array_sum(array_column($timeline['buckets'], 'samples')));
+    }
+
+    public function test_reported_namespaces_and_ttls_feed_their_panels_and_unknown_stays_unknown(): void
+    {
+        $events = [
+            ['ts' => 1.0, 'type' => 'put', 'payload' => ['key' => 'shop/a', 'driver' => 'redis', 'namespace' => 'shop', 'ttl' => 60]],
+            ['ts' => 2.0, 'type' => 'put', 'payload' => ['key' => 'b', 'driver' => 'redis', 'namespace' => '', 'ttl' => null]],
+            ['ts' => 3.0, 'type' => 'renew', 'payload' => ['key' => 'shop/a', 'driver' => 'redis', 'namespace' => 'shop', 'ttl' => 120]],
+            ['ts' => 4.0, 'type' => 'put', 'payload' => ['key' => 'c', 'driver' => 'redis']],
+        ];
+
+        $stats = Aggregator::summarize($events);
+
+        $this->assertSame(3, $stats['namespace_samples']);
+        $this->assertSame(3, $stats['ttl_samples'], 'A write without a reported TTL is not counted as forever.');
+        $this->assertSame(1, $stats['renews']);
+        $this->assertSame(2, $stats['namespaces']['shop']);
+    }
+
+    public function test_failover_windows_come_from_fallback_activity_across_processes(): void
+    {
+        $events = [
+            // First outage: two short-lived processes fail over; neither opens its circuit.
+            ['ts' => 100.0, 'type' => 'fallback_served', 'instance' => 'fpm-1', 'payload' => ['driver' => 'ResilientStore', 'key' => 'a', 'count' => 1]],
+            ['ts' => 110.0, 'type' => 'fallback_served', 'instance' => 'fpm-2', 'payload' => ['driver' => 'ResilientStore', 'count' => 5]],
+            // A worker opens its circuit, later recovers and reconciles.
+            ['ts' => 130.0, 'type' => 'circuit_opened', 'instance' => 'worker', 'payload' => ['driver' => 'ResilientStore', 'error' => 'Connection refused']],
+            ['ts' => 140.0, 'type' => 'fallback_served', 'instance' => 'worker', 'payload' => ['driver' => 'ResilientStore', 'count' => 1]],
+            ['ts' => 175.0, 'type' => 'reconciled', 'instance' => 'worker', 'payload' => ['driver' => 'ResilientStore', 'count' => 3]],
+            ['ts' => 176.0, 'type' => 'circuit_closed', 'instance' => 'worker', 'payload' => ['driver' => 'ResilientStore']],
+            // A second outage, more than a minute later, with no recovery seen yet.
+            ['ts' => 400.0, 'type' => 'fallback_served', 'instance' => 'fpm-3', 'payload' => ['driver' => 'ResilientStore', 'count' => 2]],
+        ];
+
+        $failover = Aggregator::summarize($events)['failover'];
+
+        $this->assertSame(9, $failover['fallback_served'], 'Operations served, counting each key of a batch.');
+        $this->assertSame(1, $failover['circuit_opened']);
+        $this->assertSame(1, $failover['circuit_closed']);
+        $this->assertSame(1, $failover['reconciled']);
+        $this->assertSame(3, $failover['invalidated']);
+        $this->assertSame(2, $failover['window_count']);
+
+        [$latest, $first] = $failover['windows'];
+        $this->assertSame(400.0, $latest['start']);
+        $this->assertSame(2, $latest['fallback_served']);
+        $this->assertFalse($latest['recovered']);
+        $this->assertNull($latest['error']);
+
+        $this->assertSame(100.0, $first['start']);
+        $this->assertSame(140.0, $first['end']);
+        $this->assertSame(40.0, $first['duration_seconds']);
+        $this->assertSame(7, $first['fallback_served']);
+        $this->assertSame(3, $first['processes']);
+        $this->assertSame('Connection refused', $first['error']);
+        $this->assertTrue($first['recovered']);
+    }
+
+    public function test_no_failover_activity_reports_no_windows(): void
+    {
+        $failover = Aggregator::summarize([
+            ['ts' => 1.0, 'type' => 'hit', 'payload' => ['key' => 'a', 'driver' => 'redis']],
+        ])['failover'];
+
+        $this->assertSame([], $failover['windows']);
+        $this->assertSame(0, $failover['window_count']);
+        $this->assertSame(0, $failover['fallback_served']);
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function keyShapes(): array
+    {
+        return [
+            'numeric id'          => ['user:123', 'user:{id}'],
+            'scoped numeric id'   => ['shop/product:42', 'shop/product:{id}'],
+            'id inside a slug'    => ['product-42-reviews', 'product-{id}-reviews'],
+            'query parameter'     => ['page=2&sort=name', 'page={id}&sort=name'],
+            'uuid'                => ['order:550e8400-e29b-41d4-a716-446655440000', 'order:{uuid}'],
+            'ulid'                => ['session:01ARZ3NDEKTSV4RRFFQ69G5FAV', 'session:{ulid}'],
+            'date'                => ['report:2026-10-22', 'report:{date}'],
+            'year and month'      => ['dashboard:2026-10', 'dashboard:{date}'],
+            'number range'        => ['range:10-20', 'range:{id}-{id}'],
+            'timestamp'           => ['report:2026-10-22T10:30:00Z', 'report:{date}'],
+            'email'               => ['login:ada@example.com', 'login:{email}'],
+            'hash'                => ['avatar:9f86d081884c7d659a2feaa0c55ad015', 'avatar:{hash}'],
+            'number inside word'  => ['v2:config', 'v2:config'],
+            'short hex word'      => ['color:deadbeef', 'color:deadbeef'],
+            'constant'            => ['flag:ENABLED_FEATURE_FLAG_NUMBER1', 'flag:ENABLED_FEATURE_FLAG_NUMBER1'],
+        ];
+    }
+
+    #[DataProvider('keyShapes')]
+    public function test_keys_that_differ_only_by_an_identifier_share_a_pattern(string $key, string $pattern): void
+    {
+        $this->assertSame($pattern, KeyPattern::of($key));
+    }
+
+    public function test_patterns_group_keys_per_driver_and_namespace_and_rank_four_ways(): void
+    {
+        $events = [];
+        // user:{id} in the shop namespace: 30 lookups, 6 hits — a cache that is not paying off.
+        for ($i = 0; $i < 30; $i++) {
+            $events[] = ['ts' => (float) $i, 'type' => $i % 5 === 0 ? 'hit' : 'miss', 'payload' => ['key' => 'shop/user:' . $i, 'driver' => 'redis', 'namespace' => 'shop', 'duration_ms' => 1.0]];
+        }
+        // product:{id}: 40 lookups, all hits.
+        for ($i = 0; $i < 40; $i++) {
+            $events[] = ['ts' => 100.0 + $i, 'type' => 'hit', 'payload' => ['key' => 'shop/product:' . ($i % 4), 'driver' => 'redis', 'namespace' => 'shop', 'duration_ms' => 0.2]];
+        }
+        // Same shape on another driver stays a separate pattern; too few lookups to rank by hit rate.
+        $events[] = ['ts' => 200.0, 'type' => 'miss', 'payload' => ['key' => 'shop/user:1', 'driver' => 'file', 'namespace' => 'shop', 'duration_ms' => 9.0]];
+        $events[] = ['ts' => 201.0, 'type' => 'put', 'payload' => ['key' => 'shop/user:1', 'driver' => 'file', 'namespace' => 'shop']];
+
+        $patterns = Aggregator::summarize($events)['key_patterns'];
+
+        $this->assertSame(3, $patterns['count']);
+        $this->assertSame(Aggregator::PATTERN_MIN_LOOKUPS, $patterns['min_lookups']);
+
+        $byHitRate = $patterns['rankings']['hit_rate'];
+        $this->assertSame(['shop/user:{id}', 'shop/product:{id}'], array_column($byHitRate, 'pattern'), 'Lowest hit rate first, small samples left out.');
+        $this->assertSame('redis', $byHitRate[0]['driver']);
+        $this->assertSame(30, $byHitRate[0]['keys']);
+        $this->assertSame(30, $byHitRate[0]['lookups']);
+        $this->assertEqualsWithDelta(0.2, $byHitRate[0]['hit_rate'], 0.0001);
+        $this->assertSame(['shop/user:0', 'shop/user:1', 'shop/user:2'], $byHitRate[0]['examples']);
+        $this->assertSame(4, $byHitRate[1]['keys']);
+
+        $this->assertSame(['shop/user:{id}', 'shop/user:{id}'], array_column($patterns['rankings']['misses'], 'pattern'));
+        $this->assertSame(['redis', 'file'], array_column($patterns['rankings']['misses'], 'driver'));
+        $this->assertSame('shop/product:{id}', $patterns['rankings']['lookups'][0]['pattern']);
+        $this->assertSame('file', $patterns['rankings']['latency'][0]['driver']);
+        $this->assertSame(1, $patterns['rankings']['latency'][0]['writes']);
+    }
+
+    public function test_key_search_narrows_patterns_like_it_narrows_problem_keys(): void
+    {
+        $events = [
+            ['ts' => 1.0, 'type' => 'hit', 'payload' => ['key' => 'user:1', 'driver' => 'redis']],
+            ['ts' => 2.0, 'type' => 'hit', 'payload' => ['key' => 'order:1', 'driver' => 'redis']],
+        ];
+
+        $patterns = Aggregator::summarize($events, 'order')['key_patterns'];
+
+        $this->assertSame(['order:{id}'], array_column($patterns['rankings']['lookups'], 'pattern'));
+        $this->assertNull($patterns['rankings']['lookups'][0]['namespace'], 'An unreported namespace stays unreported.');
+    }
+
+    public function test_time_saved_is_estimated_from_loader_runs_and_hit_cost(): void
+    {
+        $events = [
+            // report:{id} — two loader runs averaging 400 ms, then 10 hits at 2 ms each.
+            ['ts' => 1.0, 'type' => 'miss', 'payload' => ['key' => 'report:1', 'driver' => 'redis', 'namespace' => '', 'duration_ms' => 2.0]],
+            ['ts' => 1.1, 'type' => 'computed', 'payload' => ['key' => 'report:1', 'driver' => 'redis', 'namespace' => '', 'duration_ms' => 300.0, 'operation' => 'remember']],
+            ['ts' => 2.0, 'type' => 'miss', 'payload' => ['key' => 'report:2', 'driver' => 'redis', 'namespace' => '', 'duration_ms' => 2.0]],
+            ['ts' => 2.1, 'type' => 'computed', 'payload' => ['key' => 'report:2', 'driver' => 'redis', 'namespace' => '', 'duration_ms' => 500.0, 'operation' => 'remember']],
+        ];
+        for ($i = 0; $i < 10; $i++) {
+            $events[] = ['ts' => 3.0 + $i, 'type' => 'hit', 'payload' => ['key' => 'report:' . ($i % 2 + 1), 'driver' => 'redis', 'namespace' => '', 'duration_ms' => 2.0]];
+        }
+        // config:{id} — filled with set(): hits, but no loader runs, so no estimate.
+        $events[] = ['ts' => 20.0, 'type' => 'hit', 'payload' => ['key' => 'config:1', 'driver' => 'redis', 'namespace' => '', 'duration_ms' => 1.0]];
+        // fast:{id} — a loader cheaper than the hit itself saves nothing, never a negative amount.
+        $events[] = ['ts' => 21.0, 'type' => 'computed', 'payload' => ['key' => 'fast:1', 'driver' => 'redis', 'namespace' => '', 'duration_ms' => 0.5]];
+        $events[] = ['ts' => 22.0, 'type' => 'hit', 'payload' => ['key' => 'fast:1', 'driver' => 'redis', 'namespace' => '', 'duration_ms' => 3.0]];
+
+        $stats = Aggregator::summarize($events);
+        $ranked = $stats['key_patterns']['rankings']['time_saved'];
+
+        $this->assertSame(['report:{id}', 'fast:{id}'], array_column($ranked, 'pattern'), 'Patterns without loader runs are not ranked.');
+        $this->assertSame(2, $ranked[0]['loader_runs']);
+        $this->assertSame(400.0, $ranked[0]['loader_avg_ms']);
+        $this->assertSame(3980.0, $ranked[0]['time_saved_ms'], '10 hits × (400 ms loader − 2 ms hit).');
+        $this->assertSame(0.0, $ranked[1]['time_saved_ms']);
+
+        $this->assertSame(['estimated_ms' => 3980.0, 'patterns' => 2, 'hits' => 11, 'loader_runs' => 3], $stats['time_saved']);
+        $this->assertSame(14, $stats['latency_samples'], '2 misses and 12 hits; the 3 loader runs stay out of cache latency.');
+
+        $config = array_values(array_filter($stats['key_patterns']['rankings']['lookups'], static fn (array $row): bool => $row['pattern'] === 'config:{id}'));
+        $this->assertNull($config[0]['time_saved_ms']);
+        $this->assertNull($config[0]['loader_avg_ms']);
+    }
+
+    public function test_without_loader_runs_time_saved_is_unknown_not_zero(): void
+    {
+        $stats = Aggregator::summarize([
+            ['ts' => 1.0, 'type' => 'hit', 'payload' => ['key' => 'user:1', 'driver' => 'redis', 'duration_ms' => 1.0]],
+        ]);
+
+        $this->assertNull($stats['time_saved']['estimated_ms']);
+        $this->assertSame([], $stats['key_patterns']['rankings']['time_saved']);
+        $this->assertArrayNotHasKey('rows', $stats['key_patterns']);
+    }
+
+    public function test_a_write_is_wasted_only_when_it_ends_before_any_read(): void
+    {
+        $put = static fn (float $ts, string $key, array $extra = []): array => ['ts' => $ts, 'type' => 'put', 'payload' => ['key' => $key, 'driver' => 'redis'] + $extra];
+        $event = static fn (float $ts, string $type, string $key): array => ['ts' => $ts, 'type' => $type, 'payload' => ['key' => $key, 'driver' => 'redis']];
+        $events = [
+            // read, then overwritten: useful, then a new write that is still live and unread.
+            $put(1.0, 'a:1', ['ttl' => 600]), $event(2.0, 'hit', 'a:1'), $put(3.0, 'a:1', ['ttl' => 600]),
+            // overwritten unread
+            $put(1.0, 'a:2', ['ttl' => 600]), $put(2.0, 'a:2', ['ttl' => 600]), $event(3.0, 'hit', 'a:2'),
+            // deleted unread
+            $put(1.0, 'a:3', ['ttl' => 600]), $event(2.0, 'clear', 'a:3'),
+            // expired unread: 10 s TTL, the log runs to t = 100
+            $put(1.0, 'a:4', ['ttl' => 10]),
+            // TTL unknown and never read: no known outcome
+            $put(1.0, 'a:5'),
+            // forever and never read: may still be read, no known outcome
+            ['ts' => 1.0, 'type' => 'put_forever', 'payload' => ['key' => 'a:6', 'driver' => 'redis']],
+            // counters are not value writes
+            $event(1.0, 'increment', 'a:7'), $event(2.0, 'increment', 'a:7'),
+            $event(100.0, 'hit', 'other'),
+        ];
+
+        $stats = Aggregator::summarize($events);
+
+        $this->assertSame(
+            ['wasted' => 3, 'overwritten' => 1, 'deleted' => 1, 'expired' => 1, 'evaluated' => 5],
+            $stats['wasted_writes'],
+            'Evaluated: a:1 read, a:2 overwritten, a:2 rewrite read, a:3 deleted, a:4 expired.',
+        );
+
+        $pattern = $stats['key_patterns']['rankings']['wasted_writes'][0];
+        $this->assertSame('a:{id}', $pattern['pattern']);
+        $this->assertSame(3, $pattern['wasted_writes']);
+        $this->assertSame(5, $pattern['evaluated_writes']);
+    }
+
+    public function test_a_read_after_expiry_does_not_rescue_the_write(): void
+    {
+        $stats = Aggregator::summarize([
+            ['ts' => 1.0, 'type' => 'put', 'payload' => ['key' => 'k', 'driver' => 'redis', 'ttl' => 5]],
+            ['ts' => 9.0, 'type' => 'miss', 'payload' => ['key' => 'k', 'driver' => 'redis']],
+        ]);
+
+        $this->assertSame(1, $stats['wasted_writes']['expired']);
+    }
+
+    public function test_concurrent_misses_from_several_processes_form_a_stampede(): void
+    {
+        $miss = static fn (float $ts, string $instance, string $key = 'report:1'): array => ['ts' => $ts, 'type' => 'miss', 'instance' => $instance, 'payload' => ['key' => $key, 'driver' => 'redis', 'namespace' => '']];
+        $computed = static fn (float $ts, string $instance): array => ['ts' => $ts, 'type' => 'computed', 'instance' => $instance, 'payload' => ['key' => 'report:1', 'driver' => 'redis', 'namespace' => '', 'duration_ms' => 800.0]];
+        $events = [
+            // A stampede: 4 misses in 0.3 s from 3 processes, and 3 of them ran the loader.
+            $miss(10.0, 'p1'), $miss(10.1, 'p2'), $miss(10.2, 'p3'), $miss(10.3, 'p1'),
+            $computed(10.9, 'p1'), $computed(11.0, 'p2'), $computed(11.1, 'p3'),
+            // Not stampedes: one process missing in a loop...
+            $miss(50.0, 'p1', 'loop:1'), $miss(50.1, 'p1', 'loop:1'), $miss(50.2, 'p1', 'loop:1'), $miss(50.3, 'p1', 'loop:1'),
+            // ...and misses from several processes spread wider than the window.
+            $miss(80.0, 'p1', 'slow:1'), $miss(83.0, 'p2', 'slow:1'), $miss(86.0, 'p3', 'slow:1'),
+        ];
+
+        $stampedes = Aggregator::summarize($events)['stampedes'];
+
+        $this->assertSame(1, $stampedes['count']);
+        $this->assertSame(3, $stampedes['loader_runs']);
+        $this->assertSame(Aggregator::STAMPEDE_WINDOW_SECONDS, $stampedes['window_seconds']);
+        $this->assertSame(Aggregator::STAMPEDE_MIN_MISSES, $stampedes['min_misses']);
+        $this->assertSame(
+            ['start' => 10.0, 'duration_seconds' => 0.3, 'misses' => 4, 'processes' => 3, 'loader_runs' => 3, 'key' => 'report:1', 'driver' => 'redis', 'namespace' => ''],
+            $stampedes['recent'][0],
+        );
+    }
+
+    public function test_a_process_local_store_is_judged_per_process(): void
+    {
+        $event = static fn (float $ts, string $type, string $instance, array $extra = []): array => ['ts' => $ts, 'type' => $type, 'instance' => $instance, 'payload' => ['key' => 'report:1', 'driver' => 'ArrayStore', 'namespace' => ''] + $extra];
+        $events = [
+            // Each process writes and reads its own copy; interleaved, they are not overwriting each other.
+            $event(1.0, 'put', 'p1', ['ttl' => 600]), $event(1.1, 'put', 'p2', ['ttl' => 600]),
+            $event(1.2, 'hit', 'p1'), $event(1.3, 'hit', 'p2'),
+            // Cold per-process caches missing together are not a stampede on a shared backend.
+            $event(5.0, 'miss', 'p1'), $event(5.1, 'miss', 'p2'), $event(5.2, 'miss', 'p3'),
+        ];
+
+        $stats = Aggregator::summarize($events);
+
+        $this->assertSame(0, $stats['wasted_writes']['wasted']);
+        $this->assertSame(0, $stats['stampedes']['count']);
+
+        // The same activity on a shared store is a stampede, and p1's write was replaced before anyone read it.
+        $shared = Aggregator::summarize(array_map(static function (array $record): array {
+            $record['payload']['driver'] = 'RedisStore';
+
+            return $record;
+        }, $events));
+        $this->assertSame(1, $shared['wasted_writes']['overwritten']);
+        $this->assertSame(1, $shared['stampedes']['count']);
     }
 }

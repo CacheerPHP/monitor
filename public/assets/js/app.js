@@ -9,10 +9,13 @@ import {
   updateMetricCards,
   renderHealthWarnings,
   renderLifecycle,
+  renderFailover,
+  renderWastedWork,
   updateCoverage,
   renderDriversList,
   renderProblemKeysTable,
   renderNamespacesGrid,
+  keyPatternRowsHtml,
   renderEventsStream,
   renderKeyInspector,
   ttlDistributionChartData,
@@ -195,6 +198,8 @@ function renderMetrics(metrics, evaluateHealth = true) {
     });
   }
   renderLifecycle(metrics?.lifecycle || {});
+  renderFailover(metrics?.failover || {}, el("failoverWindows"));
+  renderWastedWork(metrics, el("stampedeList"));
   renderDrivers(metrics);
   renderTtlChart(metrics);
 
@@ -212,6 +217,13 @@ function renderMetrics(metrics, evaluateHealth = true) {
   if (keysEl) {
     const ranking = String(el("keyRanking")?.value || "misses");
     renderProblemKeysTable(keysEl, metrics?.problem_keys?.[ranking] || [], openKeyInspector, ranking);
+  }
+
+  const patternsEl = el("keyPatternsBody");
+  if (patternsEl) {
+    const ranking = String(el("patternRanking")?.value || "hit_rate");
+    const patterns = metrics?.key_patterns || {};
+    patternsEl.innerHTML = keyPatternRowsHtml(patterns.rankings?.[ranking] || [], ranking, patterns.min_lookups);
   }
 }
 
@@ -555,11 +567,13 @@ function setupEventListeners() {
     AppState.healthRules.reset();
     loadAndRenderSnapshot();
   });
-  el("keyRanking")?.addEventListener("change", () => {
-    if (AppState.lastMetrics) {
-      renderMetrics(AppState.lastMetrics, false);
-    }
-  });
+  for (const id of ["keyRanking", "patternRanking"]) {
+    el(id)?.addEventListener("change", () => {
+      if (AppState.lastMetrics) {
+        renderMetrics(AppState.lastMetrics, false);
+      }
+    });
+  }
   document.querySelectorAll("[data-lifecycle]").forEach((button) => {
     button.addEventListener("click", () => {
       el("typeFilter").value = button.dataset.lifecycle;
